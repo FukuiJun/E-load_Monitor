@@ -3,7 +3,17 @@ name: Build SDL放電ロガー.exe
 on:
   push:
   pull_request:
+  # Actions の画面（Run workflow）から実行するとき、バージョンを入れるとそのリリースを作る
   workflow_dispatch:
+    inputs:
+      release_version:
+        description: "リリースするバージョン（例 1.0.0。src/main.py の VERSION と同じ値）。空欄ならリリースしない"
+        required: false
+        default: ""
+
+# Release を作ってファイルを添付するため
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -66,3 +76,52 @@ jobs:
           name: SDL-discharge-logger
           path: out/
           if-no-files-found: error
+
+      # リリースするときだけ（タグ vX.Y.Z のプッシュ／Run workflow でバージョン指定）：
+      # Releases に SDL-Discharge-Logger-vX.Y.Z.zip（中に SDL放電ロガー.exe と README.md）を載せる。
+      # 添付ファイル名に日本語を使うと GitHub が別の文字に置き換えるため、zip の名前は英字にする
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release_version != '')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          if ($env:EVENT_NAME -eq "workflow_dispatch") {
+            $tag = "v" + $env:RELEASE_VERSION.Trim().TrimStart("v", "V")
+          } else {
+            $tag = $env:REF_NAME
+          }
+          $version = (Select-String -Path src\main.py -Pattern '^VERSION = "([^"]+)"').Matches[0].Groups[1].Value
+          if ($tag -ne "v$version") {
+            throw "タグ $tag と src\main.py の VERSION ($version) が一致しません。タグは v$version にしてください（VERSION を変える場合は先にコミット）"
+          }
+          $zip = "SDL-Discharge-Logger-$tag.zip"
+          Compress-Archive -Path out\* -DestinationPath $zip
+          $notes = @"
+          ## ダウンロードと導入
+          1. 下の **$zip** をダウンロード（「Source code」はソースコードで、exe は入っていません）
+          2. zip を右クリック →「すべて展開」→ 中の **SDL放電ロガー.exe** を好きなフォルダに置いてダブルクリック
+             （Python・NI-VISA などのインストールは不要）
+          3. 設定ファイル・ログは exe と同じフォルダに作られます。書き込めるフォルダ（C:\Program Files 以外）に置いてください
+
+          PC と SDL1020X-E の LAN 設定・使い方は同梱の README.md を参照してください。
+
+          ## 注意
+          - CC 設定・負荷 ON/OFF の SCPI コマンド（SPEC.md Q-02）は実機での確認前です。
+            うまく動かないときは、exe と同じフォルダの sdl_logger.log を添えて連絡してください
+          "@
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            # 既にリリースがある場合（画面から先に作った等）は添付だけ行う
+            gh release upload $tag $zip --clobber
+          } elseif ($env:EVENT_NAME -eq "workflow_dispatch") {
+            # タグが無ければ、このビルドのコミットにタグを付けてリリースを作る
+            gh release create $tag $zip --title "SDL放電ロガー $tag" --notes $notes --target $env:GITHUB_SHA
+          } else {
+            gh release create $tag $zip --title "SDL放電ロガー $tag" --notes $notes --verify-tag
+          }
+          if ($LASTEXITCODE -ne 0) { throw "リリースの作成・添付に失敗しました" }
+          Write-Host "Release: https://github.com/${{ github.repository }}/releases/tag/$tag"

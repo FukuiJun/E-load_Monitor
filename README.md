@@ -20,7 +20,9 @@ Python や NI-VISA などのドライバのインストールは不要です。
 
 - 設定ファイル `sdl_logger_settings.json` とログ `sdl_logger.log` は **exe と同じフォルダ** に作られます。
   書き込みできるフォルダ（`C:\Program Files` 以外）に置いてください。
-- exe は GitHub の **Actions** → 最新の「Build SDL放電ロガー.exe」→ **Artifacts** の `SDL-discharge-logger` からダウンロードできます（zip の中に exe と README）。
+- exe は GitHub のリポジトリ画面右側の **Releases** から最新版を開き、`SDL-Discharge-Logger-vX.Y.Z.zip` をダウンロードします
+  （zip の中に `SDL放電ロガー.exe` と README。同じ場所の「Source code」はソースコードで、exe は入っていません）。
+  リリース前の最新ビルドは **Actions** → 「Build SDL放電ロガー.exe」→ **Artifacts** の `SDL-discharge-logger` にあります。
 
 ## ネットワーク設定（PC と SDL を LAN ケーブルで直結）
 
@@ -215,3 +217,11 @@ Windows 11 で `build.bat` をダブルクリックします（Python 3.12 が�
 
 GitHub に push すると、GitHub Actions（Windows）でも同じビルドと起動確認（起動時間の測定）が行われ、
 exe が Artifacts に保存されます。
+
+### リリース
+
+1. `src/main.py` の `VERSION` を新しいバージョン（例 `1.1.0`）にしてコミット・push
+2. GitHub の **Actions** →「Build SDL放電ロガー.exe」→ **Run workflow** で、`release_version` に同じバージョンを入れて実行
+   （または `v1.1.0` のタグを push）
+3. ビルド・テスト・起動確認が通ると、Releases に `SDL-Discharge-Logger-v1.1.0.zip` が載ります
+   （タグと `VERSION` が一致しないときは失敗します）
