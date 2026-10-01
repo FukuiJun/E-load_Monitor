@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>SDL放電ロガー デザイン案A（放電中）</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&amp;family=Share+Tech+Mono&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#1d5fa8}a:hover{color:#14447a}
+input,textarea,button{font-family:inherit}
+.seg input{position:absolute;opacity:0;width:1px;height:1px}
+.seg span{display:block;padding:8px 0;text-align:center;border-radius:6px;background:#eef0f2;border:1px solid #b4bac0;box-shadow:0 2px 0 #9aa1a8;font-size:13px;color:#2a2e32}
+.seg input:checked + span{background:#2a2d30;color:#ffe14a;border-color:#2a2d30;box-shadow:0 2px 0 #000}
+.seg input:disabled + span{opacity:.85}
+</style>
+
+<style>
+/* 実装時の想定フォント: UI=BIZ UDPゴシック, 数値=Consolas */
+</style>
+</head>
+<body>
+
+<div style="width: 1280px; height: 800px; box-sizing: border-box; padding: 20px; display: flex; flex-direction: column; gap: 16px; background: #cfd3d7; font-family: 'BIZ UDPGothic','BIZ UDPゴシック','Noto Sans CJK JP',sans-serif; color: #1f2326">
+
+  <div style="height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; background: #e3e6e9; border-radius: 10px; border: 1px solid #b9bec3">
+    <div style="display: flex; align-items: baseline; gap: 14px">
+      <span style="font-size: 20px; font-weight: 700; letter-spacing: 0.04em">SDL放電ロガー</span>
+      <span style="font-size: 12px; color: #4a5056">SDL1020X-E 200W DC Electronic Load</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px; font-size: 13px">
+      <label for="a-ip" style="color: #3b4146">IP</label>
+      <input id="a-ip" value="192.168.10.2" readonly="" style="width: 120px; height: 30px; box-sizing: border-box; padding: 0 8px; border: 1px solid #a9afb5; border-radius: 6px; background: #f6f7f8; font-family: 'Share Tech Mono',Consolas,monospace; font-size: 14px">
+      <label for="a-port" style="color: #3b4146">Port</label>
+      <input id="a-port" value="5025" readonly="" style="width: 60px; height: 30px; box-sizing: border-box; padding: 0 8px; border: 1px solid #a9afb5; border-radius: 6px; background: #f6f7f8; font-family: 'Share Tech Mono',Consolas,monospace; font-size: 14px">
+      <button type="button" style="height: 30px; padding: 0 14px; border-radius: 6px; border: 1px solid #b4bac0; background: #eef0f2; box-shadow: 0 2px 0 #9aa1a8; font-size: 13px; color: #1f2326">切断</button>
+      <span style="display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 14px; background: #2a2d30; color: #f2f2f2; font-size: 12px">
+        <span style="width: 8px; height: 8px; border-radius: 4px; background: #5ad16a"></span>接続中
+      </span>
+    </div>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; gap: 16px; min-height: 0">
+    <div style="width: 820px; flex-shrink: 0; padding: 12px; box-sizing: border-box; background: #2a2d30; border-radius: 14px; display: flex">
+      <div style="flex-grow: 1; background: #050505; border-radius: 4px; display: flex; flex-direction: column; padding: 10px 16px 12px; box-sizing: border-box; color: #f2f2f2">
+        <div style="display: flex; align-items: center; gap: 10px; font-size: 13px; padding-bottom: 6px; border-bottom: 1px solid #e8892b">
+          <span style="padding: 2px 10px; background: #3a3a3a; color: #ffffff; font-weight: 700">CC</span>
+          <span style="color: #ffffff; font-weight: 700">LOAD ON</span>
+          <span style="color: #ffe14a">● 放電中</span>
+          <span style="margin-left: auto; color: #c9c9c9">保存予定: 20261001_143005_4.1V_pana.csv</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 2px; column-gap: 12px; padding: 8px 4px; border-bottom: 1px solid #e8892b; font-family: 'Share Tech Mono',Consolas,monospace; color: #ffe14a">
+          <div style="font-size: 40px; text-align: right">3.491 V</div>
+          <div style="font-size: 40px; text-align: right">1.000 A</div>
+          <div style="font-size: 40px; text-align: right">3.491 W</div>
+          <div style="font-size: 30px; text-align: right">2209.7 mAh</div>
+          <div style="font-size: 30px; text-align: right">8.371 Wh</div>
+          <div style="font-size: 30px; text-align: right; color: #ffffff">02:12:35</div>
+        </div>
+        <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 6px; padding-top: 8px; min-height: 0">
+          <div style="display: flex; justify-content: space-between; font-size: 12px; color: #d0d0d0">
+            <span>電圧 [V]</span><span style="color: #ff9a4a">- - 終止電圧 3.000 V</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 34px minmax(0, 1fr); column-gap: 6px; height: 196px">
+            <div style="display: flex; flex-direction: column; justify-content: space-between; font-family: 'Share Tech Mono',Consolas,monospace; font-size: 11px; color: #bdbdbd; text-align: right">
+              <span>4.3</span><span>4.0</span><span>3.7</span><span>3.4</span><span>3.1</span><span>2.8</span>
+            </div>
+            <svg viewBox="0 0 1000 400" preserveAspectRatio="none" style="width: 100%; height: 100%; display: block; border: 1px solid #3a3a3a; box-sizing: border-box">
+              <g stroke="#262626" stroke-width="1" vector-effect="non-scaling-stroke">
+                <line x1="0" y1="80" x2="1000" y2="80" vector-effect="non-scaling-stroke"></line>
+                <line x1="0" y1="160" x2="1000" y2="160" vector-effect="non-scaling-stroke"></line>
+                <line x1="0" y1="240" x2="1000" y2="240" vector-effect="non-scaling-stroke"></line>
+                <line x1="0" y1="320" x2="1000" y2="320" vector-effect="non-scaling-stroke"></line>
+                <line x1="166.7" y1="0" x2="166.7" y2="400" vector-effect="non-scaling-stroke"></line>
+                <line x1="333.3" y1="0" x2="333.3" y2="400" vector-effect="non-scaling-stroke"></line>
+                <line x1="500" y1="0" x2="500" y2="400" vector-effect="non-scaling-stroke"></line>
+                <line x1="666.7" y1="0" x2="666.7" y2="400" vector-effect="non-scaling-stroke"></line>
+                <line x1="833.3" y1="0" x2="833.3" y2="400" vector-effect="non-scaling-stroke"></line>
+              </g>
+              <line x1="0" y1="346.7" x2="1000" y2="346.7" stroke="#ff9a4a" stroke-width="1.5" stroke-dasharray="6 5" vector-effect="non-scaling-stroke"></line>
+              <polyline fill="none" stroke="#ffe14a" stroke-width="2" vector-effect="non-scaling-stroke" points="0.0,53.3 12.3,64.2 24.6,72.4 36.8,78.7 49.1,83.7 61.4,87.7 73.7,91.0 85.9,93.9 98.2,96.3 110.5,98.6 122.8,100.6 135.0,102.6 147.3,104.4 159.6,106.2 171.9,108.0 184.1,109.7 196.4,111.4 208.7,113.1 221.0,114.7 233.2,116.4 245.5,118.0 257.8,119.7 270.1,121.3 282.4,123.0 294.6,124.6 306.9,126.3 319.2,127.9 331.5,129.6 343.7,131.2 356.0,132.9 368.3,134.6 380.6,136.2 392.8,137.9 405.1,139.6 417.4,141.3 429.7,143.1 441.9,144.8 454.2,146.6 466.5,148.4 478.8,150.2 491.0,152.1 503.3,154.0 515.6,155.9 527.9,158.0 540.1,160.0 552.4,162.2 564.7,164.5 577.0,166.8 589.3,169.3 601.5,171.9 613.8,174.7 626.1,177.6 638.4,180.7 650.6,184.0 662.9,187.6 675.2,191.4 687.5,195.5 699.7,200.0 712.0,204.8 724.3,210.1 736.6,215.7"></polyline>
+            </svg>
+          </div>
+          <div style="font-size: 12px; color: #d0d0d0">電流 [A]</div>
+          <div style="display: grid; grid-template-columns: 34px minmax(0, 1fr); column-gap: 6px; height: 92px">
+            <div style="display: flex; flex-direction: column; justify-content: space-between; font-family: 'Share Tech Mono',Consolas,monospace; font-size: 11px; color: #bdbdbd; text-align: right">
+              <span>1.5</span><span>1.0</span><span>0.5</span><span>0.0</span>
+            </div>
+            <svg viewBox="0 0 1000 200" preserveAspectRatio="none" style="width: 100%; height: 100%; display: block; border: 1px solid #3a3a3a; box-sizing: border-box">
+              <g stroke="#262626" stroke-width="1">
+                <line x1="0" y1="66.7" x2="1000" y2="66.7" vector-effect="non-scaling-stroke"></line>
+                <line x1="0" y1="133.3" x2="1000" y2="133.3" vector-effect="non-scaling-stroke"></line>
+                <line x1="166.7" y1="0" x2="166.7" y2="200" vector-effect="non-scaling-stroke"></line>
+                <line x1="333.3" y1="0" x2="333.3" y2="200" vector-effect="non-scaling-stroke"></line>
+                <line x1="500" y1="0" x2="500" y2="200" vector-effect="non-scaling-stroke"></line>
+                <line x1="666.7" y1="0" x2="666.7" y2="200" vector-effect="non-scaling-stroke"></line>
+                <line x1="833.3" y1="0" x2="833.3" y2="200" vector-effect="non-scaling-stroke"></line>
+              </g>
+              <polyline fill="none" stroke="#5fb4ff" stroke-width="2" vector-effect="non-scaling-stroke" points="0.0,66.7 12.3,66.4 24.6,66.7 36.8,66.9 49.1,66.5 61.4,66.5 73.7,66.9 85.9,66.8 98.2,66.4 110.5,66.6 122.8,66.9 135.0,66.7 147.3,66.4 159.6,66.7 171.9,66.9 184.1,66.6 196.4,66.4 208.7,66.8 221.0,66.9 233.2,66.5 245.5,66.5 257.8,66.9 270.1,66.7 282.4,66.4 294.6,66.7 306.9,66.9 319.2,66.6 331.5,66.4 343.7,66.8 356.0,66.9 368.3,66.5 380.6,66.5 392.8,66.9 405.1,66.8 417.4,66.4 429.7,66.6 441.9,66.9 454.2,66.6 466.5,66.4 478.8,66.8 491.0,66.9 503.3,66.5 515.6,66.5 527.9,66.9 540.1,66.8 552.4,66.4 564.7,66.6 577.0,66.9 589.3,66.7 601.5,66.4 613.8,66.7 626.1,66.9 638.4,66.6 650.6,66.4 662.9,66.8 675.2,66.8 687.5,66.4 699.7,66.5 712.0,66.9 724.3,66.7 736.6,66.4"></polyline>
+            </svg>
+          </div>
+          <div style="display: grid; grid-template-columns: 34px minmax(0, 1fr); column-gap: 6px">
+            <span></span>
+            <div style="display: flex; justify-content: space-between; font-family: 'Share Tech Mono',Consolas,monospace; font-size: 11px; color: #bdbdbd">
+              <span>0:00</span><span>0:30</span><span>1:00</span><span>1:30</span><span>2:00</span><span>2:30</span><span>3:00 h</span>
+            </div>
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; padding-top: 8px; font-size: 12px; text-align: center">
+          <div style="border: 1px solid #5a5a5a; padding: 4px 0; color: #d0d0d0">電流<div style="color: #ffffff; font-family: 'Share Tech Mono',Consolas,monospace; font-size: 14px">1.000 A</div></div>
+          <div style="border: 1px solid #5a5a5a; padding: 4px 0; color: #d0d0d0">終止電圧<div style="color: #ffffff; font-family: 'Share Tech Mono',Consolas,monospace; font-size: 14px">3.000 V</div></div>
+          <div style="border: 1px solid #5a5a5a; padding: 4px 0; color: #d0d0d0">取得周期<div style="color: #ffffff; font-family: 'Share Tech Mono',Consolas,monospace; font-size: 14px">1.0 s</div></div>
+          <div style="border: 1px solid #5a5a5a; padding: 4px 0; color: #d0d0d0">満充電<div style="color: #ffffff; font-family: 'Share Tech Mono',Consolas,monospace; font-size: 14px">4.1 V</div></div>
+          <div style="border: 1px solid #5fb4ff; padding: 4px 0; color: #d0d0d0">メーカー<div style="color: #ffffff; font-size: 14px">Panasonic</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="flex-grow: 1; background: #e3e6e9; border: 1px solid #b9bec3; border-radius: 12px; padding: 16px 18px; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; font-size: 13px">
+      <div style="font-size: 15px; font-weight: 700">試験条件</div>
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <span style="color: #3b4146">メーカー</span>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px">
+          <label class="seg" style="position: relative"><input type="radio" name="a-mfr" disabled=""><span>未選択</span></label>
+          <label class="seg" style="position: relative"><input type="radio" name="a-mfr" checked="" disabled=""><span>Panasonic</span></label>
+          <label class="seg" style="position: relative"><input type="radio" name="a-mfr" disabled=""><span>マクセル</span></label>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <span style="color: #3b4146">満充電電圧</span>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px">
+          <label class="seg" style="position: relative"><input type="radio" name="a-full" disabled=""><span>未選択</span></label>
+          <label class="seg" style="position: relative"><input type="radio" name="a-full" checked="" disabled=""><span>4.1V</span></label>
+          <label class="seg" style="position: relative"><input type="radio" name="a-full" disabled=""><span>4.2V</span></label>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: 96px minmax(0, 1fr); row-gap: 8px; column-gap: 10px; align-items: center">
+        <label for="a-model" style="color: #3b4146">型番</label>
+        <input id="a-model" value="NCR18650B" disabled="" style="height: 30px; box-sizing: border-box; padding: 0 8px; border: 1px solid #a9afb5; border-radius: 6px; background: #f6f7f8; color: #1f2326">
+        <label for="a-cur" style="color: #3b4146">放電電流 [A]</label>
+        <input id="a-cur" value="1.000" disabled="" style="height: 30px; box-sizing: border-box; padding: 0 8px; border: 1px solid #a9afb5; border-radius: 6px; background: #f6f7f8; color: #1f2326; font-family: 'Share Tech Mono',Consolas,monospace; font-size: 15px">
+        <label for="a-cut" style="color: #3b4146">終止電圧 [V]</label>
+        <input id="a-cut" value="3.000" disabled="" style="height: 30px; box-sizing: border-box; padding: 0 8px; border: 1px solid #a9afb5; border-radius: 6px; background: #f6f7f8; color: #1f2326; font-family: 'Share Tech Mono',Consolas,monospace; font-size: 15px">
+        <label for="a-int" style="color: #3b4146">取得周期 [s]</label>
+        <input id="a-int" value="1.0" disabled="" style="height: 30px; box-sizing: border-box; padding: 0 8px; border: 1px solid #a9afb5; border-radius: 6px; background: #f6f7f8; color: #1f2326; font-family: 'Share Tech Mono',Consolas,monospace; font-size: 15px">
+        <label for="a-dir" style="color: #3b4146">保存先</label>
+        <div style="display: flex; gap: 6px">
+          <input id="a-dir" value="C:\test_program\電子負荷csv" disabled="" style="flex-grow: 1; min-width: 0; height: 30px; box-sizing: border-box; padding: 0 8px; border: 1px solid #a9afb5; border-radius: 6px; background: #f6f7f8; color: #1f2326; font-size: 12px">
+          <button type="button" disabled="" style="height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid #b4bac0; background: #eef0f2; color: #5a6066; font-size: 12px">参照</button>
+        </div>
+      </div>
+      <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 6px; min-height: 0">
+        <label for="a-memo" style="color: #3b4146">備考 <span style="font-size: 11px; color: #4a5056">（放電中も編集可）</span></label>
+        <textarea id="a-memo" style="flex-grow: 1; resize: none; box-sizing: border-box; padding: 8px; border: 1px solid #1d5fa8; border-radius: 6px; background: #ffffff; color: #1f2326; font-size: 13px; line-height: 1.5">25℃恒温槽内。2回目の測定。</textarea>
+      </div>
+    </div>
+  </div>
+
+  <div style="height: 64px; display: flex; align-items: center; gap: 12px; padding: 0 16px; background: #e3e6e9; border: 1px solid #b9bec3; border-radius: 10px">
+    <button type="button" disabled="" style="height: 44px; padding: 0 22px; border-radius: 8px; border: 1px solid #b4bac0; background: #e9ebed; color: #6a7076; font-size: 15px">放電開始</button>
+    <button type="button" style="height: 44px; padding: 0 22px; border-radius: 8px; border: 1px solid #000000; background: #111111; color: #ffffff; box-shadow: 0 3px 0 #000000; font-size: 15px; font-weight: 700">停止・保存</button>
+    <button type="button" style="height: 44px; padding: 0 22px; border-radius: 8px; border: 1px solid #8e1c16; background: #b3261e; color: #ffffff; box-shadow: 0 3px 0 #7a1712; font-size: 15px; font-weight: 700">停止・破棄</button>
+    <button type="button" style="height: 44px; padding: 0 22px; border-radius: 8px; border: 1px solid #b4bac0; background: #eef0f2; color: #1f2326; box-shadow: 0 3px 0 #9aa1a8; font-size: 15px">グラフ保存</button>
+    <span style="margin-left: auto; font-size: 13px; color: #3b4146">14:30:05 放電開始（1.000 A / 終止 3.000 V）</span>
+  </div>
+</div>
+
+</body>
+</html>

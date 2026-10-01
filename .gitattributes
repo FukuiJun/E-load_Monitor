@@ -4,3 +4,5 @@
 *.txt text eol=lf
 *.ini text eol=lf
 *.yml text eol=lf
+*.html text eol=lf
+*.png binary
