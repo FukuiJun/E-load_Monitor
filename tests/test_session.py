@@ -147,12 +147,12 @@ def test_comm_lost_saves(fake, tmp_path):
     assert result.end_reason == "通信断"
     assert not result.load_off_ok
     assert any("負荷を OFF" in m for m in result.messages)
-    statuses = []
+    attempts = []
     while not s.events.empty():
         kind, payload = s.events.get()
-        if kind == "status":
-            statuses.append(payload)
-    assert any("再接続しています（3/3）" in st for st in statuses)
+        if kind == "reconnecting":
+            attempts.append(payload)
+    assert attempts == [(1, 3), (2, 3), (3, 3)]
     assert result.csv_path.exists() and result.png_path.exists()
     assert "終了理由,通信断" in result.csv_path.read_text(encoding="utf-8-sig")
 

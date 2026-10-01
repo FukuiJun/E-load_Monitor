@@ -2,7 +2,9 @@
 
 GUI と CLI で共通に使う。測定は別スレッドで行い、進行は events（queue.Queue）で知らせる:
     ("sample", Sample)          測定 1 回分
-    ("status", str)             再接続中などの状況
+    ("status", str)             状況の文言（終止電圧到達など）
+    ("reconnecting", (n, 総数)) 通信が途切れ、n 回目の再接続を試みている
+    ("reconnected", None)       再接続して記録を再開した
     ("finished", SessionResult) 終了（保存結果つき）
 """
 
@@ -98,8 +100,12 @@ class DischargeSession:
         with self._data_lock:
             return list(self._t), list(self._v), list(self._i)
 
-    def title(self) -> str:
-        return plotting.make_title(self.base_name, self.cond.model, self.cond.current, self.cond.cutoff)
+    def title_lines(self) -> list[str]:
+        """PNG のタイトル（完了後は 3 行目に結果を入れる）"""
+        c, r = self.cond, self.result
+        if r is None or r.discarded:
+            return plotting.png_title_lines(self.base_name, c.model, c.current, c.cutoff)
+        return plotting.png_title_lines(self.base_name, c.model, c.current, c.cutoff, r.mah, r.wh, r.end_reason)
 
     # ---- 開始 ----
     def start(self) -> None:
@@ -239,7 +245,7 @@ class DischargeSession:
         """'ok'（復帰）/ 'stopped'（再接続中に停止の依頼）/ それ以外は失敗理由"""
         n = self.reconnect_attempts
         for attempt in range(1, n + 1):
-            self._status(f"通信が途切れました。再接続しています（{attempt}/{n}）")
+            self.events.put(("reconnecting", (attempt, n)))
             if self._stop_event.wait(self.reconnect_interval):
                 return "stopped"
             try:
@@ -253,7 +259,7 @@ class DischargeSession:
                 log.error("再接続後に負荷が OFF になっていました")
                 return "再接続後、SDL の負荷が OFF になっていたため停止しました"
             log.info("再接続しました（%d/%d）", attempt, n)
-            self._status("再接続しました。記録を続けます")
+            self.events.put(("reconnected", None))
             return "ok"
         return f"{n} 回再接続を試みましたが復帰しませんでした"
 
@@ -295,7 +301,9 @@ class DischargeSession:
         result.csv_path = self.paths["csv"]
         try:
             t, v, i = self.snapshot()
-            plotting.render_png(self.paths["png"], t, v, i, c.cutoff, self.title())
+            lines = plotting.png_title_lines(self.base_name, c.model, c.current, c.cutoff,
+                                             result.mah, result.wh, result.end_reason)
+            plotting.render_png(self.paths["png"], t, v, i, c.cutoff, c.current, lines)
             result.png_path = self.paths["png"]
         except Exception as e:  # noqa: BLE001 - グラフ画像の失敗で CSV を失わない
             log.exception("グラフ画像を保存できません")

@@ -62,6 +62,10 @@ def main(argv: list[str] | None = None) -> int:
                       f"{s.mah:8.1f}mAh  {s.wh:.3f}Wh")
             elif kind == "status":
                 print(payload)
+            elif kind == "reconnecting":
+                print(f"通信が途切れました。再接続しています（{payload[0]}/{payload[1]}）")
+            elif kind == "reconnected":
+                print("再接続しました。記録を続けます")
             elif kind == "finished":
                 break
     except KeyboardInterrupt:

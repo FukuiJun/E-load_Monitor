@@ -1,4 +1,4 @@
-"""グラフ（F-07、F-08、AC-11）"""
+"""グラフ（F-07、F-08、DESIGN.md 10 章、AC-11）"""
 
 import struct
 import time
@@ -7,6 +7,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
 import plotting
+from theme import C
 
 
 def test_decimate_keeps_last_point_and_limit():
@@ -18,51 +19,84 @@ def test_decimate_keeps_last_point_and_limit():
     assert plotting.decimate(small, small) == (small, small)
 
 
-def test_time_axis_units():
-    assert plotting.time_axis(3599) == (60.0, "経過時間 [分]")
-    assert plotting.time_axis(3600) == (3600.0, "経過時間 [時間]")
+def test_time_axis():
+    """横軸は max(1 時間, 経過×1.2) を 30 分単位で切り上げ。目盛りは 30 分／6h超 1h／12h超 2h"""
+    assert plotting.time_axis(0) == (1.0, 0.5)
+    assert plotting.time_axis(2 * 3600 + 12 * 60 + 35) == (3.0, 0.5)   # 見本: 0:00〜3:00 h
+    assert plotting.time_axis(5 * 3600) == (6.0, 0.5)
+    assert plotting.time_axis(6 * 3600) == (8.0, 1.0)                  # 7.2h → 7.5 → 1h 刻みで 8
+    assert plotting.time_axis(11 * 3600) == (14.0, 2.0)
+    assert plotting.format_hmm(2.5) == "2:30"
+    assert plotting.format_hmm(0) == "0:00"
+
+
+def test_voltage_axis():
+    """下限 = min(終止−0.2, 最小−0.05)、上限 = max(4.3, 最大+0.05)。目盛りは両端を含む 6 本"""
+    lo, hi, ticks = plotting.voltage_axis(3.0, [4.1, 3.5])
+    assert (lo, hi) == (2.8, 4.3)
+    assert ticks == [2.8, 3.1, 3.4, 3.7, 4.0, 4.3]
+    lo, hi, ticks = plotting.voltage_axis(3.0, [4.25, 2.45])
+    assert lo <= 2.40 and hi >= 4.3 and len(ticks) == 6
+    assert plotting.current_ylim(1.0) == (0.0, 1.5)
+
+
+def _lcd():
+    fig = Figure(figsize=(7.7, 3.6), dpi=100)
+    canvas = FigureCanvasAgg(fig)
+    return fig, canvas, plotting.LcdPlot(fig)
+
+
+def test_lcd_style():
+    """10.1：黒背景、黄色の電圧線、青の電流線、オレンジ破線の終止電圧"""
+    fig, canvas, plot = _lcd()
+    plot.update([0, 3600], [4.0, 3.6], [1.0, 1.0], 3.0, 1.0)
+    canvas.draw()
+    assert plot.ax_v.get_facecolor()[:3] == tuple(int(C["lcd-bg"][k:k + 2], 16) / 255 for k in (1, 3, 5))
+    assert plot.ax_v._sdl_line.get_color() == C["lcd-value"]
+    assert plot.ax_i._sdl_line.get_color() == C["lcd-accent"]
+    assert plot.ax_v._sdl_cutoff.get_color() == C["lcd-cutoff"]
+    assert list(plot.ax_v._sdl_cutoff.get_ydata()) == [3.0, 3.0]
+    assert plot.legend.get_text() == "- - 終止電圧 3.000 V"
+    labels = [t.get_text() for t in plot.ax_i.get_xticklabels()]
+    assert labels == ["0:00", "0:30", "1:00", "1:30 h"]  # 1h×1.2 を 30 分単位で切り上げ
+    assert plot.ax_i.get_ylim() == (0.0, 1.5)
+    # 電流グラフは高さ 92px
+    assert abs(plot.ax_i.get_position().height * 360 - 92) < 1
 
 
 def test_graph_update_86400_points_within_half_second():
     """AC-11：86,400 点でもグラフ更新（描画込み）が 0.5 秒以内"""
-    fig = Figure(figsize=(9, 6), dpi=96)
-    canvas = FigureCanvasAgg(fig)
-    plot = plotting.DischargePlot(fig)
+    fig, canvas, plot = _lcd()
     n = 86400
     t = [float(k) for k in range(n)]
     v = [4.2 - 1.2 * k / n for k in range(n)]
     i = [1.0] * n
-    plot.update(t[:10], v[:10], i[:10], 3.0)
+    plot.update(t[:10], v[:10], i[:10], 3.0, 1.0)
     canvas.draw()  # 初回の描画（フォント読み込み等）は除く
     worst = 0.0
     for _ in range(3):
         start = time.perf_counter()
-        plot.update(t, v, i, 3.0)
+        plot.update(t, v, i, 3.0, 1.0)
         canvas.draw()
         worst = max(worst, time.perf_counter() - start)
     assert worst < 0.5, f"{worst:.3f} 秒"
-    assert len(plot.line_v.get_xdata()) <= plotting.MAX_PLOT_POINTS
-    assert plot.ax_i.get_xlabel() == "経過時間 [時間]"
+    assert len(plot.ax_v._sdl_line.get_xdata()) <= plotting.MAX_PLOT_POINTS
 
 
-def test_cutoff_line_drawn():
-    fig = Figure()
-    plot = plotting.DischargePlot(fig)
-    plot.update([0, 1], [4.0, 3.9], [1, 1], 3.0)
-    assert list(plot.cutoff_line.get_ydata()) == [3.0, 3.0]
-    assert plot.cutoff_line.get_linestyle() == "--"
-    lo, hi = plot.ax_v.get_ylim()
-    assert lo < 3.0 < hi
+def test_png_title_lines_omit_missing():
+    """10.2：2 行目は未入力の項目を省く。3 行目は完了後のみ"""
+    assert plotting.png_title_lines("20261001_143005_4.1V_pana", "NCR18650B", 1.0, 3.0) == [
+        "20261001_143005_4.1V_pana", "型番: NCR18650B / 放電電流: 1.000 A / 終止電圧: 3.000 V"]
+    assert plotting.png_title_lines("b", "", 1.0, 3.0)[1] == "放電電流: 1.000 A / 終止電圧: 3.000 V"
+    lines = plotting.png_title_lines("b", "X", 1.0, 3.0, 2702.5, 9.874, "終止電圧到達")
+    assert lines[2] == "放電容量: 2702.5 mAh / 電力量: 9.874 Wh / 終了理由: 終止電圧到達"
 
 
-def test_render_png_size_and_title(tmp_path):
-    """5.2：PNG は 1600×1000 px。F-08：タイトルにベース名・型番"""
+def test_render_png_size(tmp_path):
+    """5.2：PNG は 1600×1000 px（白背景）"""
     path = tmp_path / "g.png"
-    title = plotting.make_title("20261001_143005_4.1V_pana", "NCR18650B", 1.0, 3.0)
-    assert "20261001_143005_4.1V_pana" in title and "NCR18650B" in title
-    assert "1.000 A" in title and "3.000 V" in title
-    plotting.render_png(path, [0, 60, 120], [4.1, 4.0, 3.9], [1, 1, 1], 3.0, title)
+    lines = plotting.png_title_lines("20261001_143005_4.1V_pana", "NCR18650B", 1.0, 3.0)
+    plotting.render_png(path, [0, 60, 120], [4.1, 4.0, 3.9], [1, 1, 1], 3.0, 1.0, lines)
     head = path.read_bytes()[:24]
     assert head[:8] == b"\x89PNG\r\n\x1a\n"
-    w, h = struct.unpack(">II", head[16:24])
-    assert (w, h) == (1600, 1000)
+    assert struct.unpack(">II", head[16:24]) == (1600, 1000)

@@ -1,7 +1,6 @@
-"""画面の自動テスト（AC-01, AC-05, AC-09, AC-10 の自動化できる部分）。ディスプレイが無ければスキップ"""
+"""画面の自動テスト（AC-01, 05, 09, 10 と DESIGN.md D-AC-03 の自動化できる部分）。ディスプレイが無ければスキップ"""
 
 import time
-from pathlib import Path
 
 import pytest
 
@@ -37,7 +36,7 @@ def dialogs(monkeypatch):
     import gui
 
     d = Dialogs()
-    for name in ("showinfo", "showwarning", "showerror", "askyesno"):
+    for name in ("showinfo", "showwarning", "showerror", "askyesno", "askyesnocancel"):
         monkeypatch.setattr(gui.messagebox, name, d.recorder(name))
     return d
 
@@ -80,14 +79,51 @@ def connect(app, fake, folder):
     assert pump(app.root, lambda: app.state == "idle")
 
 
-def test_connect_shows_idn_and_voltage(make_app, fake, tmp_path):
-    """AC-01／F-01：接続すると IDN と「接続中」、放電前でも電圧を表示"""
+def start(app, interval="0.2"):
+    app.interval_var.set(interval)
+    app.on_start()
+    assert pump(app.root, lambda: app.state == "discharging")
+
+
+def enabled(app):
+    return {name: getattr(app, name).enabled
+            for name in ("start_btn", "stop_save_btn", "stop_discard_btn", "graph_btn", "connect_btn")}
+
+
+def values(app):
+    return {k: lbl["text"] for k, lbl in app.value_labels.items()}
+
+
+def test_disconnected_state(make_app):
+    """D-AC-03 未接続：ピル「未接続」、LOAD OFF、数値は ---、操作ボタンはすべて無効"""
+    app = make_app()
+    assert app.pill_var.get() == "未接続"
+    assert app.load_label["text"] == "LOAD OFF" and app.state_label["text"] == "未接続"
+    assert set(values(app).values()) == {"---"}
+    assert enabled(app) == {"start_btn": False, "stop_save_btn": False, "stop_discard_btn": False,
+                            "graph_btn": False, "connect_btn": True}
+    assert app.plan_label["text"] == "保存予定: 開始時に決定（YYYYMMDD_HHMMSS.csv）"
+    app.radios[1].invoke()
+    app.radios[4].invoke()
+    assert app.plan_label["text"] == "保存予定: 開始時に決定（YYYYMMDD_HHMMSS_4.1V_pana.csv）"
+    assert [c["text"] for c in app.chip_values] == ["1.000 A", "3.000 V", "1.0 s", "4.1 V", "Panasonic"]
+
+
+def test_connect_idle_state(make_app, fake, tmp_path):
+    """AC-01／F-01／D-AC-03 待機：IDN と「接続中」、電圧・電流・電力を 1 秒ごとに表示"""
     app = make_app()
     connect(app, fake, tmp_path)
-    assert "接続中" in app.status_var.get()
-    assert "SDL1020X-E" in app.status_var.get()
-    assert pump(app.root, lambda: app.value_vars["v"].get().endswith(" V"))
-    assert str(app.start_btn["state"]) == "normal"
+    assert app.pill_var.get() == "接続中"
+    assert app.model_label["text"] == "SDL1020X-E 200W DC Electronic Load"
+    assert "Siglent Technologies,SDL1020X-E" in app.message_var.get()
+    assert app.state_label["text"] == "待機中"
+    assert app.connect_btn.button["text"] == "切断"
+    assert str(app.host_entry["state"]) == "readonly"
+    assert pump(app.root, lambda: values(app)["v"].endswith(" V"))
+    v = values(app)
+    assert v["i"] == "0.000 A" and v["p"].endswith(" W")
+    assert v["mah"] == v["wh"] == v["elapsed"] == "---"
+    assert enabled(app)["start_btn"] and not enabled(app)["graph_btn"]  # データが無いのでグラフ保存は無効
 
 
 def test_connect_failure_message(make_app, dialogs, tmp_path):
@@ -105,19 +141,20 @@ def test_connect_failure_message(make_app, dialogs, tmp_path):
     assert pump(app.root, lambda: "showerror" in dialogs.names())
     assert "接続できません。IP アドレスと LAN ケーブルを確認してください" in dialogs.calls[-1][1]
     assert app.state == "disconnected"
-    assert str(app.start_btn["state"]) == "disabled"
+    assert not app.start_btn.enabled
 
 
 def test_unselected_can_be_chosen_again(make_app):
     """F-02：起動時は未選択。一度選んだ後でも未選択に戻せる"""
     app = make_app()
     assert app.maker_var.get() == "" and app.full_var.get() == ""
-    labels = [str(rb["text"]) for rb in app.radios]
-    assert labels == ["未選択", "Panasonic", "マクセル", "未選択", "4.1V", "4.2V"]
+    assert [str(rb["text"]) for rb in app.radios] == ["未選択", "Panasonic", "マクセル", "未選択", "4.1V", "4.2V"]
     app.radios[1].invoke()
     assert app.maker_var.get() == "Panasonic"
+    assert str(app.radios[1]["fg"]) == "#ffe14a"  # 選択中は黄色の文字
     app.radios[0].invoke()
     assert app.maker_var.get() == ""
+    assert str(app.radios[1]["fg"]) != "#ffe14a"
 
 
 def test_model_max_40(make_app):
@@ -127,36 +164,64 @@ def test_model_max_40(make_app):
 
 
 def test_discharge_auto_stop_saves(make_app, fake, dialogs, tmp_path):
-    """F-03〜F-05：放電中は条件を編集不可（備考は可）。終止電圧で自動停止・保存"""
+    """F-03〜F-05／D-AC-03 放電中→完了：放電中は備考のみ編集可。終止電圧で自動停止・保存"""
     app = make_app()
     connect(app, fake, tmp_path)
     app.radios[2].invoke()  # マクセル
     app.model_var.set("NCR18650B")
-    app.interval_var.set("0.2")
     app.note_text.insert("1.0", "最初")
-    app.on_start()
-    assert pump(app.root, lambda: app.state == "discharging")
+    start(app)
+    assert app.load_label["text"] == "LOAD ON" and app.state_label["text"] == "● 放電中"
+    assert app.plan_label["text"] == f"保存予定: {app.session.base_name}.csv"
+    assert app.message_var.get().endswith("放電開始（1.000 A / 終止 3.000 V）")
     assert str(app.model_entry["state"]) == "disabled"
     assert all(str(rb["state"]) == "disabled" for rb in app.radios)
     assert str(app.note_text["state"]) == "normal"
-    assert str(app.stop_save_btn["state"]) == "normal"
-    assert str(app.stop_discard_btn["state"]) == "normal"
-    assert str(app.start_btn["state"]) == "disabled"
+    assert enabled(app) == {"start_btn": False, "stop_save_btn": True, "stop_discard_btn": True,
+                            "graph_btn": True, "connect_btn": False}
     app.note_text.insert("end", "→変更")
-    assert pump(app.root, lambda: app.value_vars["mah"].get().endswith("mAh"))
+    assert pump(app.root, lambda: values(app)["mah"].endswith("mAh"))
     fake.voltage_override = 2.5
-    assert pump(app.root, lambda: app.state == "idle")
+    assert pump(app.root, lambda: app.state == "done")
     assert "showinfo" in dialogs.names()
     base = app.session.base_name
-    assert base.endswith("_maxell")
     csv_path = tmp_path / f"{base}.csv"
+    assert base.endswith("_maxell")
     assert csv_path.exists() and (tmp_path / f"{base}.png").exists()
-    assert str(csv_path) in app.message_var.get()
+    assert app.message_var.get().endswith(f"終止電圧に到達しました。保存しました: {csv_path}")
+    assert app.state_label["text"] == "完了: 終止電圧到達" and app.load_label["text"] == "LOAD OFF"
+    assert app.plan_label["text"] == f"保存済み: {base}.csv"
+    assert enabled(app) == {"start_btn": True, "stop_save_btn": False, "stop_discard_btn": False,
+                            "graph_btn": True, "connect_btn": True}
+    assert values(app)["v"] == "2.500 V"  # 最終値で止める
+    assert app.model_var.get() == "NCR18650B"  # 完了後も値は残す（Q-D2）
     text = csv_path.read_text(encoding="utf-8-sig")
     assert '備考,"最初→変更"' in text
     assert "メーカー,マクセル" in text
-    assert "満充電電圧[V],\r\n" in text.replace("\n", "\r\n").replace("\r\r", "\r")
-    assert str(app.model_entry["state"]) == "normal"
+
+
+def test_reconnecting_state(make_app, fake, tmp_path):
+    """D-AC-03 再接続中：ピル「再接続中 (n/10)」、通信断表示、数値は最後の値を淡色、グラフ保存は無効"""
+    import gui
+
+    app = make_app()
+    connect(app, fake, tmp_path)
+    start(app)
+    assert pump(app.root, lambda: values(app)["mah"].endswith("mAh"))
+    fake.stop()
+    assert pump(app.root, lambda: app.state == "reconnecting")
+    assert app.pill_var.get().startswith("再接続中 (") and app.pill_var.get().endswith("/10)")
+    assert app.state_label["text"] == "通信断 — 再接続中"
+    assert str(app.value_labels["v"]["fg"]) == gui.C["lcd-dim"]
+    assert enabled(app) == {"start_btn": False, "stop_save_btn": True, "stop_discard_btn": True,
+                            "graph_btn": False, "connect_btn": False}
+    fake.restart()
+    assert pump(app.root, lambda: app.state == "discharging", timeout=15)
+    assert str(app.value_labels["v"]["fg"]) == gui.C["lcd-value"]
+    app.on_stop_save()
+    assert pump(app.root, lambda: app.state == "done")
+    assert app.state_label["text"] == "完了: 手動停止"
+    assert "停止しました。保存しました: " in app.message_var.get()
 
 
 def test_start_refused_below_cutoff(make_app, fake, dialogs, tmp_path):
@@ -173,6 +238,7 @@ def test_invalid_input_refused(make_app, fake, dialogs, tmp_path):
     app = make_app()
     connect(app, fake, tmp_path)
     app.current_var.set("5.5")
+    assert app.chip_values[0]["text"] == "---"
     app.on_start()
     assert dialogs.calls[-1][0] == "showerror"
     assert "0.001〜5.000" in dialogs.calls[-1][1]
@@ -183,37 +249,48 @@ def test_stop_discard_confirm(make_app, fake, dialogs, tmp_path):
     """F-06：いいえなら放電継続、はいなら破棄（ファイルは残らない）"""
     app = make_app()
     connect(app, fake, tmp_path)
-    app.interval_var.set("0.2")
-    app.on_start()
-    assert pump(app.root, lambda: app.state == "discharging")
+    start(app)
     dialogs.answer = False
     app.on_stop_discard()
     assert dialogs.calls[-1] == ("askyesno", "データを保存せずに停止します。よろしいですか？")
     assert app.state == "discharging"
     dialogs.answer = True
     app.on_stop_discard()
-    assert pump(app.root, lambda: app.state == "idle")
+    assert pump(app.root, lambda: app.state == "done")
     assert not fake.load_on
     assert list(tmp_path.iterdir()) == []
+    assert app.plan_label["text"] == "破棄しました"
+    assert app.message_var.get().endswith("停止しました。データは破棄しました")
 
 
 def test_save_graph_names(make_app, fake, tmp_path):
-    """F-08：未開始時は graph_<日時>.png、開始後は <ベース名>_<時刻>.png"""
+    """F-08：開始後は <ベース名>_<時刻>.png。未開始は graph_<日時>.png（ここでは関数を直接呼ぶ）"""
     app = make_app()
     app.folder_var.set(str(tmp_path))
     app.on_save_graph()
     pngs = list(tmp_path.glob("graph_*.png"))
     assert len(pngs) == 1 and len(pngs[0].stem) == len("graph_20261001_143005")
     connect(app, fake, tmp_path)
-    app.interval_var.set("0.2")
-    app.on_start()
-    assert pump(app.root, lambda: app.state == "discharging")
+    start(app)
     app.on_save_graph()
     base = app.session.base_name
-    named = [p for p in tmp_path.glob(f"{base}_*.png")]
+    named = list(tmp_path.glob(f"{base}_*.png"))
     assert len(named) == 1 and len(named[0].stem) == len(base) + 7
+    assert app.message_var.get().endswith(f"グラフを保存しました: {named[0]}")
     app.on_stop_save()
-    assert pump(app.root, lambda: app.state == "idle")
+    assert pump(app.root, lambda: app.state == "done")
+
+
+def test_disconnect_clears(make_app, fake, tmp_path):
+    app = make_app()
+    connect(app, fake, tmp_path)
+    start(app)
+    app.on_stop_save()
+    assert pump(app.root, lambda: app.state == "done")
+    app.on_connect()  # 切断
+    assert app.state == "disconnected"
+    assert set(values(app).values()) == {"---"}
+    assert app.model_label["text"] == ""
 
 
 def test_settings_restored(make_app, fake, tmp_path, app_dir):
@@ -242,13 +319,20 @@ def test_settings_restored(make_app, fake, tmp_path, app_dir):
     assert app2.model_var.get() == "" and app2.note() == ""
 
 
+def test_close_dialog_choices(make_app, dialogs):
+    """F-10／DESIGN 11 章：標準のメッセージボックス（はい=保存して終了、いいえ=破棄して終了）"""
+    app = make_app()
+    for answer, expected in ((True, "save"), (False, "discard"), (None, None)):
+        dialogs.answer = answer
+        assert app.ask_close_choice() == expected
+    assert dialogs.calls[-1] == ("askyesnocancel", "放電中です。停止・保存して終了しますか？")
+
+
 def test_close_during_discharge_saves(make_app, fake, tmp_path, monkeypatch):
     """F-10：放電中に閉じる →「保存して終了」で停止・保存してから終了"""
     app = make_app()
     connect(app, fake, tmp_path)
-    app.interval_var.set("0.2")
-    app.on_start()
-    assert pump(app.root, lambda: app.state == "discharging")
+    start(app)
     monkeypatch.setattr(app, "ask_close_choice", lambda: None)
     app.on_close()
     assert app.state == "discharging"  # キャンセル
@@ -265,9 +349,7 @@ def test_close_during_discharge_saves(make_app, fake, tmp_path, monkeypatch):
 def test_close_during_discharge_discards(make_app, fake, tmp_path, monkeypatch):
     app = make_app()
     connect(app, fake, tmp_path)
-    app.interval_var.set("0.2")
-    app.on_start()
-    assert pump(app.root, lambda: app.state == "discharging")
+    start(app)
     monkeypatch.setattr(app, "ask_close_choice", lambda: "discard")
     session = app.session
     app.on_close()
@@ -299,8 +381,15 @@ def test_partial_file_notice_at_startup(dialogs, tmp_path, app_dir):
         root.destroy()
 
 
-def test_format_elapsed():
-    import gui
-
-    assert gui.format_elapsed(9755) == "02:42:35"
-    assert gui.format_elapsed(0) == "00:00:00"
+def test_side_panel_fixed_width_when_enlarged(make_app):
+    """D-AC-05：ウィンドウを広げるとグラフが伸び、試験条件パネルは幅 400 のまま"""
+    app = make_app()
+    app.root.update()
+    side = app.note_text.master.master
+    graph = app.canvas.get_tk_widget()
+    w0, g0 = side.winfo_width(), graph.winfo_width()
+    app.root.geometry("1600x1000")
+    app.root.update()
+    pump(app.root, lambda: graph.winfo_width() > g0, timeout=3)
+    assert side.winfo_width() == w0 == 400
+    assert graph.winfo_width() > g0
