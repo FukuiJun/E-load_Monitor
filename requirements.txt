@@ -1,0 +1,5 @@
+# 実行に必要（tkinter は Python 標準）
+matplotlib>=3.8
+# 開発・ビルドに必要
+pytest>=8
+pyinstaller>=6.6

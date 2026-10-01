@@ -1,0 +1,68 @@
+name: Build SDL放電ロガー.exe
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # パッケージのインストール → テスト（pytest）→ PyInstaller で単一 exe（dist\SDL放電ロガー.exe）
+      - name: Build (build.bat)
+        shell: cmd
+        run: build.bat
+
+      # 起動してウィンドウが表示されるまでの時間を 3 回測る（1 回目はウイルス対策ソフトの初回スキャン・
+      # matplotlib のフォント一覧の作成込み）。2 回目以降が 10 秒を超えたら失敗にする（8 章 起動時間）
+      - name: Smoke test and startup time
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "smoke"
+          New-Item -ItemType Directory -Path $dir | Out-Null
+          $exe = Get-ChildItem dist -Filter *.exe | Select-Object -First 1
+          Copy-Item $exe.FullName $dir
+          $exePath = Join-Path $dir $exe.Name
+          $times = @()
+          for ($i = 1; $i -le 3; $i++) {
+            $ready = Join-Path $env:RUNNER_TEMP "ready-$i.txt"
+            $env:SDL_LOGGER_READY_FILE = $ready
+            $sw = [Diagnostics.Stopwatch]::StartNew()
+            $p = Start-Process -FilePath $exePath -PassThru
+            while (-not (Test-Path $ready)) {
+              if ($p.HasExited) { throw "exe が終了しました（終了コード $($p.ExitCode)）" }
+              if ($sw.Elapsed.TotalSeconds -gt 90) { throw "90 秒たってもウィンドウが表示されません" }
+              Start-Sleep -Milliseconds 20
+            }
+            $sw.Stop()
+            $times += $sw.Elapsed.TotalSeconds
+            Start-Sleep -Seconds 1
+            if ($p.HasExited) { throw "exe が表示直後に終了しました" }
+            # onefile の exe は子プロセスが本体なので、子も含めて止める
+            taskkill /PID $p.Id /T /F | Out-Null
+            Start-Sleep -Seconds 1
+          }
+          $log = Join-Path $dir "sdl_logger.log"
+          if (-not (Test-Path $log)) { throw "exe と同じフォルダに sdl_logger.log が作られていません" }
+          Write-Host ("起動時間（ウィンドウ表示まで）: " + (($times | ForEach-Object { "{0:N2}秒" -f $_ }) -join " / "))
+          if ($times[1] -gt 10 -or $times[2] -gt 10) { throw "起動に 10 秒以上かかっています" }
+
+      - name: Collect files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path out | Out-Null
+          Copy-Item (Get-ChildItem dist -Filter *.exe).FullName out
+          Copy-Item README.md out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SDL-discharge-logger
+          path: out/
+          if-no-files-found: error
