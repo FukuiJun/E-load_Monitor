@@ -130,6 +130,7 @@ class FlatButton:
         "primary": (C["accent-blue"], "#ffffff", C["accent-blue"], True),
         "stop": (C["button-stop"], "#ffffff", "#000000", True),
         "danger": (C["danger"], "#ffffff", "#8e1c16", True),
+        "akane": (C["akane"], "#ffffff", C["akane-border"], True),
     }
 
     def __init__(self, parent, fonts: Fonts, text: str, command, style: str = "key", *, height: int = 30,
@@ -163,7 +164,7 @@ class FlatButton:
 
 
 class LoadKey:
-    """SDL1020X-E 本体の ON/OFF キーを模したボタン（明るい灰色の縁の中の黒いキー）。負荷 ON の間は黄緑に光る"""
+    """SDL1020X-E 本体の ON/OFF キーを模したボタン（明るい灰色の縁の中の黒いキー）。負荷 ON の間は外枠だけ黄緑に光る"""
 
     def __init__(self, parent, fonts: Fonts, command, *, width: int = 132, height: int = 44):
         self.frame = tk.Frame(parent, width=px(width), height=px(height), bg=C["onoff-frame"])
@@ -181,11 +182,9 @@ class LoadKey:
             self._apply()
 
     def _apply(self) -> None:
-        if self._lit:
-            bg, fg, frame = C["onoff-lit"], C["onoff-lit-text"], C["onoff-lit-frame"]
-        else:
-            bg, frame = C["onoff-key"], C["onoff-frame"]
-            fg = C["onoff-text"] if self._enabled else C["onoff-off-text"]
+        bg = C["onoff-key"]
+        fg = C["onoff-text"] if self._enabled else C["onoff-off-text"]
+        frame = C["onoff-lit"] if self._lit else C["onoff-frame"]
         self.button.configure(state="normal" if self._enabled else "disabled", bg=bg, fg=fg, activebackground=bg,
                               activeforeground=fg, disabledforeground=fg, cursor="hand2" if self._enabled else "arrow")
         self.frame.configure(bg=frame)
@@ -528,7 +527,7 @@ class App:
         # ON/OFF：待機中・完了後に押すと放電開始（負荷 ON、黄緑に光る）、放電中に押すと停止（保存は［CSV保存］）
         self.onoff_btn = LoadKey(bar, f, self.on_onoff)
         self.csv_btn = FlatButton(bar, f, "CSV保存", self.on_save_csv, "primary", **opts)
-        self.graph_btn = FlatButton(bar, f, "グラフ保存", self.on_save_graph, "key", **opts)
+        self.graph_btn = FlatButton(bar, f, "グラフ保存", self.on_save_graph, "akane", **opts)
         for k, b in enumerate((self.onoff_btn, self.csv_btn, self.graph_btn)):
             b.frame.pack(side="left", padx=(px(16) if k == 0 else px(12), 0))
         # グラフの横軸（時間軸）の幅。測定中も変えられる

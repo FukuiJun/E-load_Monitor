@@ -102,6 +102,8 @@ def test_disconnected_state(make_app):
     assert set(values(app).values()) == {"---"}
     assert enabled(app) == {"onoff_btn": False, "csv_btn": False, "graph_btn": False, "connect_btn": True}
     assert not app.onoff_btn.lit
+    assert str(app.onoff_btn.frame["bg"]) == "#c9cdd1"
+    assert str(app.graph_btn.button["bg"]) == "#e9ebed"  # 押せないときは灰色
     assert app.plan_label["text"] == "保存予定: 開始時に決定（YYYYMMDD_HHMMSS.csv）"
     app.radios[1].invoke()
     app.radios[4].invoke()
@@ -179,8 +181,10 @@ def test_discharge_auto_stop_saves(make_app, fake, dialogs, tmp_path):
     assert all(str(rb["state"]) == "disabled" for rb in app.radios)
     assert str(app.note_text["state"]) == "normal"
     assert enabled(app) == {"onoff_btn": True, "csv_btn": False, "graph_btn": True, "connect_btn": False}
-    assert app.onoff_btn.lit  # 放電中は ON/OFF キーが黄緑に光る
-    assert str(app.onoff_btn.button["bg"]) == "#9be03c"
+    assert app.onoff_btn.lit  # 放電中は ON/OFF キーの外枠だけ黄緑に光る（キーは黒のまま）
+    assert str(app.onoff_btn.frame["bg"]) == "#9be03c"
+    assert str(app.onoff_btn.button["bg"]) == "#17191b"
+    assert str(app.graph_btn.button["bg"]) == "#b7282e"  # グラフ保存は押せるとき茜色
     app.note_text.insert("end", "→変更")
     assert pump(app.root, lambda: values(app)["mah"].endswith("mAh"))
     fake.voltage_override = 2.5
