@@ -12,20 +12,20 @@ START = datetime(2026, 10, 1, 14, 30, 5)
 
 
 @pytest.mark.parametrize("full, maker, expected", [
-    ("4.1V", "Panasonic", "20261001_143005_4.1V_pana"),
-    ("4.2V", "マクセル", "20261001_143005_4.2V_maxell"),
-    (None, "Panasonic", "20261001_143005_pana"),
-    ("4.1V", None, "20261001_143005_4.1V"),
-    (None, None, "20261001_143005"),
+    ("4.1V", "Panasonic", "20261001_1430_4.1V_pana"),
+    ("4.2V", "マクセル", "20261001_1430_4.2V_maxell"),
+    (None, "Panasonic", "20261001_1430_pana"),
+    ("4.1V", None, "20261001_1430_4.1V"),
+    (None, None, "20261001_1430"),
 ])
 def test_base_name_patterns(full, maker, expected):
-    """AC-02：仕様書 5.2 の表の 5 パターン"""
+    """AC-02：仕様書 5.2 の表の 5 パターン（日時は分まで）"""
     assert recorder.make_base_name(START, full, maker) == expected
 
 
 def test_unique_base_name_adds_suffix(tmp_path):
     """AC-02：同名ファイルがあると _2、さらにあると _3"""
-    base = "20261001_143005_4.1V_pana"
+    base = "20261001_1430_4.1V_pana"
     assert recorder.unique_base_name(tmp_path, base) == base
     (tmp_path / f"{base}.csv").write_text("x")
     assert recorder.unique_base_name(tmp_path, base) == f"{base}_2"
@@ -76,7 +76,7 @@ def _write(tmp_path, info, n=3):
         w.append(Sample(START + timedelta(seconds=k), float(k), 4.1, 1.0, 4.1, mah, wh))
     w.close()
     out = tmp_path / "x.csv"
-    recorder.write_final_csv(out, info, partial)
+    recorder.write_final_csv(out, info, recorder.read_measured(partial))
     return out
 
 
@@ -88,8 +88,8 @@ def test_final_csv_layout(tmp_path):
     assert "\r\n" in text and "\n" not in text.replace("\r\n", "")
     lines = text.split("\r\n")
     assert lines[0] == "試験情報"
-    assert lines[1] == "開始日時,2026/10/01 14:30:05"
-    assert lines[2] == "終了日時,2026/10/01 17:12:40"
+    assert lines[1] == "開始日時,2026/10/01 14:30"  # 試験情報の日時は分まで
+    assert lines[2] == "終了日時,2026/10/01 17:12"
     assert lines[3] == "終了理由,終止電圧到達"
     assert lines[4] == "メーカー,Panasonic"
     assert lines[5] == "満充電電圧[V],4.1"

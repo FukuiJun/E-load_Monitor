@@ -265,7 +265,7 @@ def test_stop_keep_then_save(fake, tmp_path):
     assert not fake.load_on
     assert s.paths["partial"].exists() and not s.paths["csv"].exists()
     s.note = "保存時点の備考"
-    result = s.save_pending()
+    result = s.save()
     assert not result.pending
     assert result.csv_path.exists() and result.png_path.exists()
     assert not s.paths["partial"].exists()
@@ -290,8 +290,39 @@ def test_stop_keep_save_failure_can_retry(fake, tmp_path):
     s.request_stop(keep=True)
     s.wait(10)
     s.paths["csv"].write_text("Excel で開いている同名ファイル")
-    result = s.save_pending()
-    assert result.pending and result.error.startswith("保存できませんでした。一時ファイル:")
+    result = s.save()
+    assert result.pending and not result.save_ok
+    assert result.error.startswith("保存できませんでした。一時ファイル:")
     s.paths["csv"].unlink()
-    result = s.save_pending()
-    assert not result.pending and result.error is None and result.csv_path.exists()
+    result = s.save()
+    assert not result.pending and result.save_ok and result.error is None and result.csv_path.exists()
+
+
+def test_save_again_after_auto_save(fake, tmp_path):
+    """自動保存のあとも何度でも保存できる。上書きせずに <ベース名>_2.csv, _3.csv …（測定データは同じ）"""
+    s = make_session(fake, tmp_path, note="1回目")
+    s.start()
+    time.sleep(0.4)
+    s.request_stop(save=True)
+    first = s.wait(10).csv_path
+    assert first == s.paths["csv"] and first.exists() and not s.paths["partial"].exists()
+    assert s.can_save
+    s.note = "2回目"
+    result = s.save()
+    second = tmp_path / f"{s.base_name}_2.csv"
+    assert result.save_ok and result.csv_path == second and result.png_path == tmp_path / f"{s.base_name}_2.png"
+    result = s.save()
+    assert result.csv_path == tmp_path / f"{s.base_name}_3.csv"
+    data = [p.read_text(encoding="utf-8-sig").split("\n\n", 1)[1] for p in (first, second, result.csv_path)]
+    assert data[0] == data[1] == data[2]
+    assert '備考,"1回目"' in first.read_text(encoding="utf-8-sig")
+    assert '備考,"2回目"' in second.read_text(encoding="utf-8-sig")
+
+
+def test_cannot_save_after_discard(fake, tmp_path):
+    s = make_session(fake, tmp_path)
+    s.start()
+    time.sleep(0.3)
+    s.request_stop(save=False)
+    s.wait(10)
+    assert not s.can_save

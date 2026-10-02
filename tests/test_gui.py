@@ -104,10 +104,10 @@ def test_disconnected_state(make_app):
     assert not app.onoff_btn.lit
     assert str(app.onoff_btn.frame["bg"]) == "#c9cdd1"
     assert str(app.graph_btn.button["bg"]) == "#e9ebed"  # 押せないときは灰色
-    assert app.plan_label["text"] == "保存予定: 開始時に決定（YYYYMMDD_HHMMSS.csv）"
+    assert app.plan_label["text"] == "保存予定: 開始時に決定（YYYYMMDD_HHMM.csv）"
     app.radios[1].invoke()
     app.radios[4].invoke()
-    assert app.plan_label["text"] == "保存予定: 開始時に決定（YYYYMMDD_HHMMSS_4.1V_pana.csv）"
+    assert app.plan_label["text"] == "保存予定: 開始時に決定（YYYYMMDD_HHMM_4.1V_pana.csv）"
     assert [c["text"] for c in app.chip_values] == ["1.000 A", "3.000 V", "1.0 s", "4.1 V", "Panasonic"]
 
 
@@ -202,7 +202,8 @@ def test_discharge_auto_stop_saves(make_app, fake, dialogs, tmp_path):
     assert app.message_var.get().endswith(f"終止電圧に到達しました。保存しました: {csv_path}")
     assert app.state_label["text"] == "完了: 終止電圧到達" and app.load_label["text"] == "LOAD OFF"
     assert app.plan_label["text"] == f"保存済み: {base}.csv"
-    assert enabled(app) == {"onoff_btn": True, "csv_btn": False, "graph_btn": True, "connect_btn": True}
+    # 自動保存のあとも CSV保存を押せる（もう一度保存すると <ベース名>_2.csv）
+    assert enabled(app) == {"onoff_btn": True, "csv_btn": True, "graph_btn": True, "connect_btn": True}
     assert str(app.graph_btn.button["bg"]) == "#b7282e"  # グラフ保存は押せるとき茜色
     assert not app.onoff_btn.lit
     assert values(app)["v"] == "2.500 V"  # 最終値で止める
@@ -280,7 +281,18 @@ def test_onoff_stop_then_csv_save(make_app, fake, dialogs, tmp_path):
     assert '備考,"メモ→保存時点"' in csv_path.read_text(encoding="utf-8-sig")
     assert app.message_var.get().endswith(f"保存しました: {csv_path}")
     assert app.plan_label["text"] == f"保存済み: {base}.csv"
-    assert not enabled(app)["csv_btn"]
+    # 保存したあとも何度でも保存できる。上書きせずに _2, _3 … を付ける（備考は押した時点の内容）
+    assert enabled(app)["csv_btn"]
+    app.note_text.insert("end", "→2回目")
+    app.csv_btn.invoke()
+    assert pump(app.root, lambda: not app._saving and (tmp_path / f"{base}_2.csv").exists())
+    second = tmp_path / f"{base}_2.csv"
+    assert (tmp_path / f"{base}_2.png").exists()
+    assert '備考,"メモ→保存時点→2回目"' in second.read_text(encoding="utf-8-sig")
+    assert '備考,"メモ→保存時点"' in csv_path.read_text(encoding="utf-8-sig")  # 1 回目のファイルはそのまま
+    assert app.message_var.get().endswith(f"保存しました: {second}")
+    assert app.plan_label["text"] == f"保存済み: {base}_2.csv"
+    assert enabled(app)["csv_btn"]
 
 
 def test_unsaved_data_confirm_on_start(make_app, fake, dialogs, tmp_path):

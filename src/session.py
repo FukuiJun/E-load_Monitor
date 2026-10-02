@@ -50,11 +50,12 @@ class Conditions:
 class SessionResult:
     end_reason: str
     discarded: bool = False
-    pending: bool = False              # 止めたがまだ保存していない（save_pending / discard_pending 待ち）
+    pending: bool = False              # 止めたがまだ保存していない（save / discard_pending 待ち）
     csv_path: Path | None = None
     png_path: Path | None = None
     partial_path: Path | None = None   # 保存できなかったときに残した一時ファイル
     error: str | None = None
+    save_ok: bool = True               # 直前の保存で CSV を作れたか
     load_off_ok: bool = True
     mah: float = 0.0
     wh: float = 0.0
@@ -79,6 +80,7 @@ class DischargeSession:
         self.latest: Sample | None = None
         self._integrator = Integrator()
         self._writer: PartialWriter | None = None
+        self._measured: str | None = None  # 一時ファイルの内容。保存後も持っておき、もう一度保存するときに使う
         self._stop_event = threading.Event()
         self._stop_save = True
         self._stop_keep = False
@@ -164,21 +166,36 @@ class DischargeSession:
         """停止を依頼する。結果は finished イベントで届く。
 
         save=True: 停止して保存 / save=False: 停止して破棄 /
-        keep=True: 停止だけして一時ファイルを残す（後で save_pending か discard_pending）
+        keep=True: 停止だけして一時ファイルを残す（後で save か discard_pending）
         """
         self._stop_save = save
         self._stop_keep = keep
         self._stop_event.set()
 
-    def save_pending(self) -> SessionResult:
-        """keep で止めたデータを保存する（CSV と PNG）。備考は呼んだ時点の self.note"""
+    @property
+    def can_save(self) -> bool:
+        """止めたあと［CSV保存］できるデータがある（保存待ち・保存済み・保存に失敗して一時ファイルが残っている）"""
+        r = self.result
+        if r is None or r.discarded:
+            return False
+        return r.pending or r.csv_path is not None or self._measured is not None or self.paths["partial"].exists()
+
+    def save(self) -> SessionResult:
+        """止めたデータを保存する（CSV と PNG）。備考は呼んだ時点の self.note。
+
+        まだ保存していなければ <ベース名>.csv、保存済みなら上書きせずに <ベース名>_2.csv, _3 … として何度でも保存する。
+        """
         result = self.result
-        if result is None or not result.pending:
-            raise RuntimeError("保存待ちのデータがありません")
-        result.error, result.partial_path = None, None  # 前回の保存の失敗はやり直すので消す
-        self._save(result, self._end_time)
-        if result.csv_path is not None:
-            result.pending = False
+        if not self.can_save:
+            raise RuntimeError("保存できるデータがありません")
+        result.error = None  # 前回の保存の失敗はやり直すので消す
+        if result.csv_path is None:
+            result.partial_path = None
+            self._save(result, self._end_time)
+            if result.save_ok:
+                result.pending = False
+        else:
+            self._save(result, self._end_time, recorder.unique_base_name(self.folder, self.base_name))
         return result
 
     def discard_pending(self) -> None:
@@ -308,7 +325,7 @@ class DischargeSession:
                  "保存待ち" if keep else "保存" if save else "破棄", result.mah, result.wh,
                  "成功" if load_off_ok else "失敗")
         if keep:
-            pass  # 一時ファイルを残し、save_pending / discard_pending を待つ
+            pass  # 一時ファイルを残し、save / discard_pending を待つ
         elif save:
             self._save(result, end_time)
         else:
@@ -317,27 +334,36 @@ class DischargeSession:
         self._finished.set()
         self.events.put(("finished", result))
 
-    def _save(self, result: SessionResult, end_time: datetime) -> None:
+    def _save(self, result: SessionResult, end_time: datetime, base: str | None = None) -> None:
+        """CSV と PNG を保存する。base を渡すとその名前で（もう一度保存するとき）"""
         c = self.cond
+        paths = self.paths if base is None else recorder.output_paths(self.folder, base)
         info = TestInfo(start=self.start_time, end=end_time, end_reason=result.end_reason, maker=c.maker,
                         full_voltage=c.full_voltage, model=c.model, current=c.current, cutoff=c.cutoff,
                         mah=self._integrator.mah, wh=self._integrator.wh, interval=c.interval,
                         idn=self.client.idn, note=self.note)
         partial = self.paths["partial"]
         try:
-            recorder.write_final_csv(self.paths["csv"], info, partial)
+            if self._measured is None:
+                self._measured = recorder.read_measured(partial)
+            recorder.write_final_csv(paths["csv"], info, self._measured)
         except OSError as e:
-            log.error("最終 CSV を作れません %s: %s", self.paths["csv"], e)
-            result.partial_path = partial
-            result.error = f"保存できませんでした。一時ファイル: {partial}"
+            log.error("最終 CSV を作れません %s: %s", paths["csv"], e)
+            result.save_ok = False
+            if partial.exists():
+                result.partial_path = partial
+                result.error = f"保存できませんでした。一時ファイル: {partial}"
+            else:
+                result.error = f"保存できませんでした: {paths['csv']}（{e}）"
             return
-        result.csv_path = self.paths["csv"]
+        result.save_ok = True
+        result.csv_path = paths["csv"]
         try:
             t, v, i = self.snapshot()
-            lines = plotting.png_title_lines(self.base_name, c.model, c.current, c.cutoff,
+            lines = plotting.png_title_lines(paths["csv"].stem, c.model, c.current, c.cutoff,
                                              result.mah, result.wh, result.end_reason)
-            plotting.render_png(self.paths["png"], t, v, i, c.cutoff, c.current, lines)
-            result.png_path = self.paths["png"]
+            plotting.render_png(paths["png"], t, v, i, c.cutoff, c.current, lines)
+            result.png_path = paths["png"]
         except Exception as e:  # noqa: BLE001 - グラフ画像の失敗で CSV を失わない
             log.exception("グラフ画像を保存できません")
             result.error = f"グラフ画像を保存できませんでした（{e}）"

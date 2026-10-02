@@ -626,7 +626,9 @@ class App:
         has_data = self.session is not None and bool(self.session.snapshot()[0])
         self.onoff_btn.set(enabled=s in (IDLE, DONE, DISCHARGING, RECONNECTING) and not self._saving,
                            lit=s in (DISCHARGING, RECONNECTING, STOPPING))
-        self.csv_btn.set_enabled(s == DONE and self.pending and not self._saving)
+        # CSV保存は止めたあと何度でも押せる（自動保存のあとも。2 回目からは <ベース名>_2.csv …）
+        self.csv_btn.set_enabled(s == DONE and self.session is not None and self.session.can_save
+                                 and not self._saving)
         # グラフ保存も CSV保存と同じく、負荷を OFF にしてから押せる（放電中・再接続中は押せない）
         self.graph_btn.set_enabled((s == DONE or (s == IDLE and has_data)) and not self._saving)
 
@@ -858,20 +860,23 @@ class App:
         self._set_state(STOPPING)
 
     def on_save_csv(self) -> None:
-        """ON/OFF で止めたデータを保存する（<ベース名>.csv と .png）。備考は押した時点の内容"""
-        if self.state != DONE or not self.pending or self._saving or self.session is None:
+        """止めたデータを保存する（<ベース名>.csv と .png）。備考は押した時点の内容。
+
+        保存済み（自動保存を含む）でも押せて、そのときは上書きせずに <ベース名>_2.csv, _3 … として保存する
+        """
+        if self.state != DONE or self._saving or self.session is None or not self.session.can_save:
             return
         session = self.session
         session.note = self.note()
         self._saving = True
         self._refresh()
-        self._run_bg(session.save_pending, self._on_csv_saved, self._on_csv_save_failed)
+        self._run_bg(session.save, self._on_csv_saved, self._on_csv_save_failed)
 
     def _on_csv_saved(self, result) -> None:
         self._saving = False
         self.result = result
         self._refresh()
-        if result.pending:  # 最終 CSV が作れなかった（一時ファイルは残っている）
+        if not result.save_ok:  # CSV が作れなかった（データは残っているので、もう一度押せる）
             self.message(result.error or "保存できませんでした", "error")
             messagebox.showerror(APP_TITLE, result.error or "保存できませんでした")
             return
@@ -1071,8 +1076,8 @@ class App:
                 return
             if answer:
                 self.session.note = self.note()
-                result = self.session.save_pending()
-                if result.pending:
+                result = self.session.save()
+                if not result.save_ok:
                     messagebox.showerror(APP_TITLE, result.error or "保存できませんでした")
                     return
             else:

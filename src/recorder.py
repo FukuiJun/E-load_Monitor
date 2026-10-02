@@ -31,8 +31,8 @@ END_REASON_ERROR = "異常終了"
 
 # ---- ファイル名 ----
 def make_base_name(start: datetime, full_voltage: str | None = None, maker: str | None = None) -> str:
-    """<YYYYMMDD_HHMMSS>[_<満充電電圧>][_<メーカー略称>]（未選択の部分は _ ごと省く）"""
-    parts = [start.strftime("%Y%m%d_%H%M%S")]
+    """<YYYYMMDD_HHMM>[_<満充電電圧>][_<メーカー略称>]（未選択の部分は _ ごと省く。同じ分に重なれば _2 …）"""
+    parts = [start.strftime("%Y%m%d_%H%M")]
     if full_voltage:
         parts.append(full_voltage)
     if maker:
@@ -128,7 +128,8 @@ class Sample:
 
 
 def format_datetime(dt: datetime) -> str:
-    return dt.strftime("%Y/%m/%d %H:%M:%S")
+    """試験情報の開始・終了日時（分まで）"""
+    return dt.strftime("%Y/%m/%d %H:%M")
 
 
 def format_datetime_ms(dt: datetime) -> str:
@@ -222,13 +223,17 @@ def info_lines(info: TestInfo) -> str:
     return text
 
 
-def write_final_csv(path: Path, info: TestInfo, partial_path: Path) -> None:
-    """試験情報ブロック＋空行＋一時ファイルの内容（列見出し＋測定行）で最終 CSV を作る。
+def read_measured(partial_path: Path) -> str:
+    """一時ファイルの内容（列見出し＋測定行）"""
+    with open(partial_path, "r", encoding=CSV_ENCODING, newline="") as fp:
+        return fp.read()
+
+
+def write_final_csv(path: Path, info: TestInfo, measured: str) -> None:
+    """試験情報ブロック＋空行＋測定データ（read_measured の内容）で最終 CSV を作る。
 
     同名のファイルがあれば上書きせずに FileExistsError。途中で失敗したら作りかけの CSV は消す。
     """
-    with open(partial_path, "r", encoding=CSV_ENCODING, newline="") as fp:
-        measured = fp.read()
     path = Path(path)
     try:
         with open(path, "x", encoding=CSV_ENCODING, newline="") as fp:
