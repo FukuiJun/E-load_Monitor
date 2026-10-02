@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<!-- SDL放電ロガー アイコン（デザイン案B「液晶カーブ」）。PNG/ICO は tools/make_icon.py で作る -->
+<rect x="24" y="24" width="464" height="464" rx="40" fill="#9aa1a8"/>
+<rect x="40" y="40" width="432" height="432" rx="26" fill="#e3e6e9"/>
+<rect x="84" y="96" width="344" height="264" rx="10" fill="#2a2d30"/>
+<rect x="104" y="116" width="304" height="224" rx="4" fill="#050505"/>
+<line x1="120" y1="266" x2="392" y2="266" stroke="#e8892b" stroke-width="10" stroke-dasharray="26 16"/>
+<path d="M124 146 C 190 160, 262 180, 312 196 S 372 224, 392 282" fill="none" stroke="#ffe14a" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="124" y1="314" x2="392" y2="314" stroke="#5fb4ff" stroke-width="14" stroke-linecap="round"/>
+<g fill="#b9bec3" stroke="#9aa1a8" stroke-width="3">
+<rect x="106" y="398" width="34" height="26" rx="6"/>
+<rect x="150" y="398" width="34" height="26" rx="6"/>
+<rect x="194" y="398" width="34" height="26" rx="6"/>
+</g>
+<circle cx="325" cy="411" r="28" fill="#d23a2f" stroke="#f4f5f6" stroke-width="6"/>
+<circle cx="397" cy="411" r="28" fill="#1d1f21" stroke="#f4f5f6" stroke-width="6"/>
+</svg>

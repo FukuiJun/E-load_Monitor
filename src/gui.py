@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import queue
+import sys
 import threading
 import time
 import tkinter as tk
@@ -21,6 +22,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
 import display
+import paths
 import plotting
 import recorder
 import settings as settings_mod
@@ -208,6 +210,7 @@ class App:
         root.geometry(f"{w}x{h}")
         root.protocol("WM_DELETE_WINDOW", self.on_close)
         root.report_callback_exception = self._on_tk_error
+        self._set_window_icon()
 
         self._build()
         for var in (self.maker_var, self.full_var, self.current_var, self.cutoff_var, self.interval_var):
@@ -216,6 +219,18 @@ class App:
         root.after(POLL_MS, self._poll)
         root.after(GRAPH_MS, self._graph_tick)
         root.after_idle(self._after_shown)
+
+    def _set_window_icon(self) -> None:
+        """ウィンドウ左上・タスクバーのアイコン（無くても動作は続ける）"""
+        self._icon_images = []
+        try:
+            self._icon_images = [tk.PhotoImage(master=self.root, file=str(p)) for p in paths.icon_pngs() if p.exists()]
+            if self._icon_images:
+                self.root.iconphoto(True, *self._icon_images)
+            if sys.platform == "win32" and paths.icon_ico().exists():
+                self.root.iconbitmap(default=str(paths.icon_ico()))
+        except tk.TclError as e:
+            log.warning("ウィンドウのアイコンを設定できません: %s", e)
 
     # ================================================================== 組み立て
     def _build(self) -> None:

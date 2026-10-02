@@ -23,6 +23,22 @@ def app_dir() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
+def resource_dir() -> Path:
+    """exe に同梱したファイル（アイコンなど）の置き場所。開発時はリポジトリの直下"""
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parents[1]
+
+
+def icon_ico() -> Path:
+    return resource_dir() / "assets" / "app.ico"
+
+
+def icon_pngs() -> list[Path]:
+    """ウィンドウのアイコン用 PNG（大きい順）"""
+    return [resource_dir() / "assets" / f"icon_{n}.png" for n in (256, 48, 32, 16)]
+
+
 def settings_path() -> Path:
     return app_dir() / SETTINGS_FILE
 

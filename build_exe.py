@@ -5,6 +5,7 @@ exe のファイル名は EXE_NAME。画面のタイトル（SDL放電ロガー�
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -23,11 +24,15 @@ def main() -> int:
         str(ROOT / "src" / "main.py"),
         "--onefile", "--windowed", "--noconfirm", "--clean",
         "--name", EXE_NAME,
+        "--icon", str(ROOT / "assets" / "app.ico"),
         "--paths", str(ROOT / "src"),
         "--distpath", str(dist),
         "--workpath", str(ROOT / "build"),
         "--specpath", str(ROOT / "build"),
     ]
+    # ウィンドウのアイコン用（exe の中の assets フォルダに入れる）
+    for name in ["app.ico"] + [f"icon_{n}.png" for n in (16, 32, 48, 256)]:
+        args += ["--add-data", f"{ROOT / 'assets' / name}{os.pathsep}assets"]
     for mod in EXCLUDES:
         args += ["--exclude-module", mod]
     PyInstaller.__main__.run(args)

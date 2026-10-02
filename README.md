@@ -189,8 +189,10 @@ py -3.12 src\cli.py --host 127.0.0.1 --current 1.0 --cutoff 3.0 --folder out --m
 │   ├─ applog.py       ログ（1MB × 3 世代でローテーション）
 │   ├─ paths.py        ファイルの置き場所
 │   └─ cli.py          CLI
+├─ assets/            アイコン（icon.svg が元の図。app.ico・icon_*.png は tools/make_icon.py で作る）
 ├─ docs/design/       画面デザイン仕様（DESIGN.md・参照画像・見本 HTML）
 ├─ tools/fake_sdl.py   SDL シミュレータ
+├─ tools/make_icon.py  アイコンの ico・PNG を作る
 ├─ tests/              自動テスト（pytest）
 ├─ build.bat           exe を作るスクリプト
 └─ build_exe.py        PyInstaller の呼び出し（build.bat から使う）

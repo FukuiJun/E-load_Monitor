@@ -30,3 +30,17 @@ def test_broken_or_out_of_range_values_fall_back(app_dir):
     assert s.current == 1.0 and s.cutoff == 3.0 and s.interval == 1.0
     (app_dir / "sdl_logger_settings.json").write_text("{壊れた", encoding="utf-8")
     assert settings.load().host == "192.168.10.2"
+
+
+def test_icon_files():
+    """アイコン（デザイン案B）：exe 用の ico に 16〜256 px、ウィンドウ用の PNG がある"""
+    from PIL import Image
+
+    import paths
+
+    ico = paths.icon_ico()
+    assert ico.exists()
+    sizes = Image.open(ico).info["sizes"]
+    assert {(16, 16), (32, 32), (48, 48), (256, 256)} <= set(sizes)
+    for p in paths.icon_pngs():
+        assert p.exists(), p

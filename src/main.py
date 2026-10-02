@@ -43,6 +43,15 @@ def main() -> int:
     threading.excepthook = _thread_excepthook
     atexit.register(_emergency_off)
 
+    if sys.platform == "win32":
+        # タスクバーで python のアイコンではなくこのアプリのアイコンを出すため（開発時の python 実行向け）
+        try:
+            import ctypes
+
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("SDLDischargeLogger")
+        except Exception:  # noqa: BLE001
+            pass
+
     import tkinter as tk
     from tkinter import messagebox
 
