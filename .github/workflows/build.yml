@@ -35,6 +35,45 @@ jobs:
       - name: Smoke test and startup time
         shell: pwsh
         run: |
+          # タイトルバー左上のアイコンを撮影して確かめる（空だと Windows 標準の白い四角になる）。
+          # アイコンの黒い液晶の画素があれば OK。撮影した画像は Artifacts（titlebar）に保存する
+          Add-Type -AssemblyName System.Drawing
+          Add-Type @"
+          using System;
+          using System.Runtime.InteropServices;
+          public static class Win {
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string cls, string title);
+            [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+            [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+            [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+          }
+          "@
+          function Test-TitleBarIcon {
+            $h = [Win]::FindWindow($null, "SDL_DischargeLogger")
+            if ($h -eq [IntPtr]::Zero) { throw "ウィンドウ（SDL_DischargeLogger）が見つかりません" }
+            [Win]::SetForegroundWindow($h) | Out-Null
+            Start-Sleep -Milliseconds 500
+            $r = New-Object Win+RECT
+            [Win]::GetWindowRect($h, [ref]$r) | Out-Null
+            $bmp = New-Object System.Drawing.Bitmap 420, 60
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.CopyFromScreen($r.Left, $r.Top, 0, 0, $bmp.Size)
+            New-Item -ItemType Directory -Force -Path shots | Out-Null
+            $bmp.Save((Join-Path (Get-Location) "shots\titlebar.png"))
+            $bg = $bmp.GetPixel(300, 18)
+            if (($bg.R + $bg.G + $bg.B) / 3 -lt 150) {
+              Write-Warning "タイトルバーを撮影できなかったため、アイコンの確認を省略しました"
+              return
+            }
+            $dark = 0
+            for ($x = 0; $x -lt 36; $x++) { for ($y = 0; $y -lt 44; $y++) {
+              $c = $bmp.GetPixel($x, $y)
+              if ($c.R -lt 60 -and $c.G -lt 60 -and $c.B -lt 60) { $dark++ }
+            } }
+            Write-Host "タイトルバーのアイコン領域の黒い画素: $dark"
+            if ($dark -lt 10) { throw "タイトルバーにアプリのアイコンが表示されていません（shots/titlebar.png を参照）" }
+          }
+
           $dir = Join-Path $env:RUNNER_TEMP "smoke"
           New-Item -ItemType Directory -Path $dir | Out-Null
           $exe = Get-ChildItem dist -Filter *.exe | Select-Object -First 1
@@ -55,6 +94,7 @@ jobs:
             $times += $sw.Elapsed.TotalSeconds
             Start-Sleep -Seconds 1
             if ($p.HasExited) { throw "exe が表示直後に終了しました" }
+            if ($i -eq 3) { Test-TitleBarIcon }
             # onefile の exe は子プロセスが本体なので、子も含めて止める
             taskkill /PID $p.Id /T /F | Out-Null
             Start-Sleep -Seconds 1
@@ -63,6 +103,13 @@ jobs:
           if (-not (Test-Path $log)) { throw "exe と同じフォルダに sdl_logger.log が作られていません" }
           Write-Host ("起動時間（ウィンドウ表示まで）: " + (($times | ForEach-Object { "{0:N2}秒" -f $_ }) -join " / "))
           if ($times[1] -gt 10 -or $times[2] -gt 10) { throw "起動に 10 秒以上かかっています" }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: titlebar
+          path: shots/
+          if-no-files-found: ignore
 
       - name: Collect files
         shell: pwsh

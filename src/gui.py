@@ -324,14 +324,20 @@ class App:
         root.after_idle(self._after_shown)
 
     def _set_window_icon(self) -> None:
-        """ウィンドウ左上・タスクバーのアイコン（無くても動作は続ける）"""
+        """ウィンドウ左上・タスクバーのアイコン（無くても動作は続ける）。
+
+        Windows では .ico をこのウィンドウに直接設定する方法だけを使う。iconphoto と iconbitmap(default=) を
+        続けて呼ぶと、後の設定が前のアイコンを捨ててタイトルバーのアイコンが空（白い四角）になるため。
+        """
         self._icon_images = []
         try:
+            if sys.platform == "win32":
+                if paths.icon_ico().exists():
+                    self.root.iconbitmap(str(paths.icon_ico()))
+                return
             self._icon_images = [tk.PhotoImage(master=self.root, file=str(p)) for p in paths.icon_pngs() if p.exists()]
             if self._icon_images:
                 self.root.iconphoto(True, *self._icon_images)
-            if sys.platform == "win32" and paths.icon_ico().exists():
-                self.root.iconbitmap(default=str(paths.icon_ico()))
         except tk.TclError as e:
             log.warning("ウィンドウのアイコンを設定できません: %s", e)
 
