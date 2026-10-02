@@ -50,6 +50,7 @@ class Conditions:
 class SessionResult:
     end_reason: str
     discarded: bool = False
+    pending: bool = False              # 止めたがまだ保存していない（save_pending / discard_pending 待ち）
     csv_path: Path | None = None
     png_path: Path | None = None
     partial_path: Path | None = None   # 保存できなかったときに残した一時ファイル
@@ -80,6 +81,8 @@ class DischargeSession:
         self._writer: PartialWriter | None = None
         self._stop_event = threading.Event()
         self._stop_save = True
+        self._stop_keep = False
+        self._end_time: datetime | None = None
         self._thread: threading.Thread | None = None
         self._finished = threading.Event()
         self._data_lock = threading.Lock()
@@ -157,10 +160,36 @@ class DischargeSession:
         self._thread.start()
 
     # ---- 停止 ----
-    def request_stop(self, save: bool = True) -> None:
-        """停止・保存（save=True）または停止・破棄（save=False）を依頼する。結果は finished イベントで届く"""
+    def request_stop(self, save: bool = True, *, keep: bool = False) -> None:
+        """停止を依頼する。結果は finished イベントで届く。
+
+        save=True: 停止して保存 / save=False: 停止して破棄 /
+        keep=True: 停止だけして一時ファイルを残す（後で save_pending か discard_pending）
+        """
         self._stop_save = save
+        self._stop_keep = keep
         self._stop_event.set()
+
+    def save_pending(self) -> SessionResult:
+        """keep で止めたデータを保存する（CSV と PNG）。備考は呼んだ時点の self.note"""
+        result = self.result
+        if result is None or not result.pending:
+            raise RuntimeError("保存待ちのデータがありません")
+        result.error, result.partial_path = None, None  # 前回の保存の失敗はやり直すので消す
+        self._save(result, self._end_time)
+        if result.csv_path is not None:
+            result.pending = False
+        return result
+
+    def discard_pending(self) -> None:
+        """keep で止めたデータを破棄する（一時ファイルを消す）"""
+        result = self.result
+        if result is None or not result.pending:
+            return
+        _unlink(self.paths["partial"])
+        result.pending = False
+        result.discarded = True
+        log.info("保存せずに破棄 %s", self.base_name)
 
     def wait(self, timeout: float | None = None) -> SessionResult | None:
         self._finished.wait(timeout)
@@ -204,7 +233,7 @@ class DischargeSession:
                 return
             delay = next_t - time.monotonic()
             if self._stop_event.wait(max(delay, 0)):
-                self._finish(END_REASON_MANUAL, save=self._stop_save)
+                self._finish(END_REASON_MANUAL, save=self._stop_save, keep=self._stop_keep)
                 return
             now = time.monotonic()
             timestamp = datetime.now()
@@ -223,7 +252,7 @@ class DischargeSession:
                 log.warning("放電中に通信エラー: %s", e)
                 outcome = self._reconnect()
                 if outcome == "stopped":
-                    self._finish(END_REASON_MANUAL, save=self._stop_save)
+                    self._finish(END_REASON_MANUAL, save=self._stop_save, keep=self._stop_keep)
                     return
                 if outcome != "ok":
                     self._finish(END_REASON_COMM_LOST, save=True, error=outcome)
@@ -263,20 +292,24 @@ class DischargeSession:
             return "ok"
         return f"{n} 回再接続を試みましたが復帰しませんでした"
 
-    def _finish(self, reason: str, save: bool, error: str | None = None) -> None:
+    def _finish(self, reason: str, save: bool, error: str | None = None, keep: bool = False) -> None:
         load_off_ok = self.client.load_off_safely()
         if self._writer is not None:
             self._writer.close()
         end_time = datetime.now()
-        result = SessionResult(end_reason=reason, discarded=not save, load_off_ok=load_off_ok,
-                               mah=self._integrator.mah, wh=self._integrator.wh)
+        self._end_time = end_time
+        result = SessionResult(end_reason=reason, discarded=not save and not keep, pending=keep,
+                               load_off_ok=load_off_ok, mah=self._integrator.mah, wh=self._integrator.wh)
         if error:
             result.messages.append(error)
         if not load_off_ok:
             result.messages.append("負荷 OFF を送信できませんでした。SDL 本体で負荷を OFF にしてください")
         log.info("放電終了 %s 理由: %s %s 容量 %.1fmAh %.3fWh 負荷OFF:%s", self.base_name, reason,
-                 "保存" if save else "破棄", result.mah, result.wh, "成功" if load_off_ok else "失敗")
-        if save:
+                 "保存待ち" if keep else "保存" if save else "破棄", result.mah, result.wh,
+                 "成功" if load_off_ok else "失敗")
+        if keep:
+            pass  # 一時ファイルを残し、save_pending / discard_pending を待つ
+        elif save:
             self._save(result, end_time)
         else:
             _unlink(self.paths["partial"])

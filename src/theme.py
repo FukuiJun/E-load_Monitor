@@ -41,6 +41,14 @@ COLORS = {
     "button-disabled": "#e9ebed", # 無効ボタンの背景
     "button-stop": "#111111",     # 停止・保存ボタン
     "memo-bg": "#ffffff",         # 備考の背景
+    # ON/OFF キー（SDL1020X-E 本体の ON/OFF キーを模す。負荷 ON の間は黄緑に光る）
+    "onoff-frame": "#c9cdd1",     # キーまわりの明るい灰色の縁
+    "onoff-key": "#17191b",       # キー（黒）
+    "onoff-text": "#ffffff",
+    "onoff-lit": "#9be03c",       # 光っているとき（黄緑）
+    "onoff-lit-text": "#10200a",
+    "onoff-lit-frame": "#d6f5a6", # 光っているときの縁（にじみ）
+    "onoff-off-text": "#8a9096",  # 押せないとき（未接続など）
     "message-warn": "#8a5300",    # メッセージ欄の警告
     "png-bg": "#ffffff",
     "png-grid": "#e3e6e9",

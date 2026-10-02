@@ -81,13 +81,13 @@ def connect(app, fake, folder):
 
 def start(app, interval="0.2"):
     app.interval_var.set(interval)
-    app.on_start()
+    app.onoff_btn.invoke()  # ON/OFF キーで放電開始
     assert pump(app.root, lambda: app.state == "discharging")
 
 
 def enabled(app):
     return {name: getattr(app, name).enabled
-            for name in ("start_btn", "stop_save_btn", "stop_discard_btn", "graph_btn", "connect_btn")}
+            for name in ("onoff_btn", "csv_btn", "graph_btn", "connect_btn")}
 
 
 def values(app):
@@ -100,8 +100,8 @@ def test_disconnected_state(make_app):
     assert app.pill_var.get() == "未接続"
     assert app.load_label["text"] == "LOAD OFF" and app.state_label["text"] == "未接続"
     assert set(values(app).values()) == {"---"}
-    assert enabled(app) == {"start_btn": False, "stop_save_btn": False, "stop_discard_btn": False,
-                            "graph_btn": False, "connect_btn": True}
+    assert enabled(app) == {"onoff_btn": False, "csv_btn": False, "graph_btn": False, "connect_btn": True}
+    assert not app.onoff_btn.lit
     assert app.plan_label["text"] == "保存予定: 開始時に決定（YYYYMMDD_HHMMSS.csv）"
     app.radios[1].invoke()
     app.radios[4].invoke()
@@ -123,7 +123,8 @@ def test_connect_idle_state(make_app, fake, tmp_path):
     v = values(app)
     assert v["i"] == "0.000 A" and v["p"].endswith(" W")
     assert v["mah"] == v["wh"] == v["elapsed"] == "---"
-    assert enabled(app)["start_btn"] and not enabled(app)["graph_btn"]  # データが無いのでグラフ保存は無効
+    assert enabled(app)["onoff_btn"] and not enabled(app)["graph_btn"]  # データが無いのでグラフ保存は無効
+    assert not enabled(app)["csv_btn"] and not app.onoff_btn.lit
 
 
 def test_connect_failure_message(make_app, dialogs, tmp_path):
@@ -141,7 +142,7 @@ def test_connect_failure_message(make_app, dialogs, tmp_path):
     assert pump(app.root, lambda: "showerror" in dialogs.names())
     assert "接続できません。IP アドレスと LAN ケーブルを確認してください" in dialogs.calls[-1][1]
     assert app.state == "disconnected"
-    assert not app.start_btn.enabled
+    assert not app.onoff_btn.enabled
 
 
 def test_unselected_can_be_chosen_again(make_app):
@@ -177,8 +178,9 @@ def test_discharge_auto_stop_saves(make_app, fake, dialogs, tmp_path):
     assert str(app.model_entry["state"]) == "disabled"
     assert all(str(rb["state"]) == "disabled" for rb in app.radios)
     assert str(app.note_text["state"]) == "normal"
-    assert enabled(app) == {"start_btn": False, "stop_save_btn": True, "stop_discard_btn": True,
-                            "graph_btn": True, "connect_btn": False}
+    assert enabled(app) == {"onoff_btn": True, "csv_btn": False, "graph_btn": True, "connect_btn": False}
+    assert app.onoff_btn.lit  # 放電中は ON/OFF キーが黄緑に光る
+    assert str(app.onoff_btn.button["bg"]) == "#9be03c"
     app.note_text.insert("end", "→変更")
     assert pump(app.root, lambda: values(app)["mah"].endswith("mAh"))
     fake.voltage_override = 2.5
@@ -191,8 +193,8 @@ def test_discharge_auto_stop_saves(make_app, fake, dialogs, tmp_path):
     assert app.message_var.get().endswith(f"終止電圧に到達しました。保存しました: {csv_path}")
     assert app.state_label["text"] == "完了: 終止電圧到達" and app.load_label["text"] == "LOAD OFF"
     assert app.plan_label["text"] == f"保存済み: {base}.csv"
-    assert enabled(app) == {"start_btn": True, "stop_save_btn": False, "stop_discard_btn": False,
-                            "graph_btn": True, "connect_btn": True}
+    assert enabled(app) == {"onoff_btn": True, "csv_btn": False, "graph_btn": True, "connect_btn": True}
+    assert not app.onoff_btn.lit
     assert values(app)["v"] == "2.500 V"  # 最終値で止める
     assert app.model_var.get() == "NCR18650B"  # 完了後も値は残す（Q-D2）
     text = csv_path.read_text(encoding="utf-8-sig")
@@ -213,15 +215,15 @@ def test_reconnecting_state(make_app, fake, tmp_path):
     assert app.pill_var.get().startswith("再接続中 (") and app.pill_var.get().endswith("/10)")
     assert app.state_label["text"] == "通信断 — 再接続中"
     assert str(app.value_labels["v"]["fg"]) == gui.C["lcd-dim"]
-    assert enabled(app) == {"start_btn": False, "stop_save_btn": True, "stop_discard_btn": True,
-                            "graph_btn": False, "connect_btn": False}
+    assert enabled(app) == {"onoff_btn": True, "csv_btn": False, "graph_btn": False, "connect_btn": False}
+    assert app.onoff_btn.lit
     fake.restart()
     assert pump(app.root, lambda: app.state == "discharging", timeout=15)
     assert str(app.value_labels["v"]["fg"]) == gui.C["lcd-value"]
-    app.on_stop_save()
+    app.onoff_btn.invoke()
     assert pump(app.root, lambda: app.state == "done")
     assert app.state_label["text"] == "完了: 手動停止"
-    assert "停止しました。保存しました: " in app.message_var.get()
+    assert app.message_var.get().endswith("停止しました。［CSV保存］で保存できます")
 
 
 def test_start_refused_below_cutoff(make_app, fake, dialogs, tmp_path):
@@ -245,22 +247,69 @@ def test_invalid_input_refused(make_app, fake, dialogs, tmp_path):
     assert app.state == "idle"
 
 
-def test_stop_discard_confirm(make_app, fake, dialogs, tmp_path):
-    """F-06：いいえなら放電継続、はいなら破棄（ファイルは残らない）"""
+def test_onoff_stop_then_csv_save(make_app, fake, dialogs, tmp_path):
+    """ON/OFF で停止 → 負荷 OFF・保存待ち（CSV保存が有効）→ CSV保存で CSV と PNG を保存"""
+    app = make_app()
+    connect(app, fake, tmp_path)
+    app.note_text.insert("1.0", "メモ")
+    start(app)
+    assert pump(app.root, lambda: values(app)["mah"].endswith("mAh"))
+    app.onoff_btn.invoke()
+    assert pump(app.root, lambda: app.state == "done")
+    assert not fake.load_on and not app.onoff_btn.lit
+    base = app.session.base_name
+    assert app.plan_label["text"] == "未保存（［CSV保存］で保存）"
+    assert enabled(app)["csv_btn"]
+    assert not (tmp_path / f"{base}.csv").exists() and (tmp_path / f"{base}.partial.csv").exists()
+    app.note_text.insert("end", "→保存時点")
+    app.csv_btn.invoke()
+    assert pump(app.root, lambda: not app.pending and not app._saving)
+    csv_path = tmp_path / f"{base}.csv"
+    assert csv_path.exists() and (tmp_path / f"{base}.png").exists()
+    assert not (tmp_path / f"{base}.partial.csv").exists()
+    assert '備考,"メモ→保存時点"' in csv_path.read_text(encoding="utf-8-sig")
+    assert app.message_var.get().endswith(f"保存しました: {csv_path}")
+    assert app.plan_label["text"] == f"保存済み: {base}.csv"
+    assert not enabled(app)["csv_btn"]
+
+
+def test_unsaved_data_confirm_on_start(make_app, fake, dialogs, tmp_path):
+    """保存せずに次の放電を始めるときは確認。いいえ＝何もしない、はい＝破棄して開始（停止・破棄の代わり）"""
     app = make_app()
     connect(app, fake, tmp_path)
     start(app)
-    dialogs.answer = False
-    app.on_stop_discard()
-    assert dialogs.calls[-1] == ("askyesno", "データを保存せずに停止します。よろしいですか？")
-    assert app.state == "discharging"
-    dialogs.answer = True
-    app.on_stop_discard()
+    app.onoff_btn.invoke()
     assert pump(app.root, lambda: app.state == "done")
-    assert not fake.load_on
-    assert list(tmp_path.iterdir()) == []
-    assert app.plan_label["text"] == "破棄しました"
-    assert app.message_var.get().endswith("停止しました。データは破棄しました")
+    first = app.session
+    dialogs.answer = False
+    app.onoff_btn.invoke()
+    assert dialogs.calls[-1] == ("askyesno", "保存していないデータがあります。破棄して放電を開始しますか？")
+    assert app.state == "done" and app.pending
+    dialogs.answer = True
+    app.onoff_btn.invoke()
+    assert pump(app.root, lambda: app.state == "discharging")
+    assert first.result.discarded
+    # 破棄した一時ファイルは消える（同じ秒に始めると新しい放電が同じ名前を使うので、その場合は除く）
+    assert app.session.base_name == first.base_name or not first.paths["partial"].exists()
+    app.onoff_btn.invoke()
+    assert pump(app.root, lambda: app.state == "done")
+
+
+def test_unsaved_data_on_close(make_app, fake, dialogs, tmp_path):
+    """保存せずに閉じるときは確認（はい＝保存して終了）"""
+    app = make_app()
+    connect(app, fake, tmp_path)
+    start(app)
+    app.onoff_btn.invoke()
+    assert pump(app.root, lambda: app.state == "done")
+    base = app.session.base_name
+    dialogs.answer = True
+    closed = []
+    app.root.bind("<Destroy>", lambda e: closed.append(1) if e.widget is app.root else None)
+    app.on_close()
+    assert dialogs.calls[-1] == ("askyesnocancel", "保存していないデータがあります。保存して終了しますか？")
+    assert closed
+    assert (tmp_path / f"{base}.csv").exists()
 
 
 def test_save_graph_names(make_app, fake, tmp_path):
@@ -277,7 +326,7 @@ def test_save_graph_names(make_app, fake, tmp_path):
     named = list(tmp_path.glob(f"{base}_*.png"))
     assert len(named) == 1 and len(named[0].stem) == len(base) + 7
     assert app.message_var.get().endswith(f"グラフを保存しました: {named[0]}")
-    app.on_stop_save()
+    app.onoff_btn.invoke()
     assert pump(app.root, lambda: app.state == "done")
 
 
@@ -285,8 +334,10 @@ def test_disconnect_clears(make_app, fake, tmp_path):
     app = make_app()
     connect(app, fake, tmp_path)
     start(app)
-    app.on_stop_save()
+    app.onoff_btn.invoke()
     assert pump(app.root, lambda: app.state == "done")
+    app.csv_btn.invoke()
+    assert pump(app.root, lambda: not app.pending and not app._saving)
     app.on_connect()  # 切断
     assert app.state == "disconnected"
     assert set(values(app).values()) == {"---"}
@@ -424,7 +475,7 @@ def test_time_span_control(make_app, fake, tmp_path):
     app.span_var.set("自動")
     app.apply_span()
     assert app.time_span is None
-    app.on_stop_save()
+    app.onoff_btn.invoke()
     assert pump(app.root, lambda: app.state == "done")
 
 

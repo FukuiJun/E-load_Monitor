@@ -251,3 +251,47 @@ def test_unique_name_when_started_twice_in_same_second(fake, tmp_path):
         s.wait(10)
     if names[0][:15] == names[1][:15]:
         assert names[1] == names[0] + "_2"
+
+
+def test_stop_keep_then_save(fake, tmp_path):
+    """ON/OFF で停止：負荷 OFF・一時ファイルを残して保存待ち。CSV保存で CSV と PNG を作る"""
+    s = make_session(fake, tmp_path, note="最初")
+    s.start()
+    time.sleep(0.5)
+    s.request_stop(keep=True)
+    result = s.wait(10)
+    assert result.pending and not result.discarded
+    assert result.end_reason == "手動停止"
+    assert not fake.load_on
+    assert s.paths["partial"].exists() and not s.paths["csv"].exists()
+    s.note = "保存時点の備考"
+    result = s.save_pending()
+    assert not result.pending
+    assert result.csv_path.exists() and result.png_path.exists()
+    assert not s.paths["partial"].exists()
+    assert '備考,"保存時点の備考"' in result.csv_path.read_text(encoding="utf-8-sig")
+
+
+def test_stop_keep_then_discard(fake, tmp_path):
+    s = make_session(fake, tmp_path)
+    s.start()
+    time.sleep(0.4)
+    s.request_stop(keep=True)
+    s.wait(10)
+    s.discard_pending()
+    assert s.result.discarded and not s.result.pending
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_stop_keep_save_failure_can_retry(fake, tmp_path):
+    s = make_session(fake, tmp_path)
+    s.start()
+    time.sleep(0.4)
+    s.request_stop(keep=True)
+    s.wait(10)
+    s.paths["csv"].write_text("Excel で開いている同名ファイル")
+    result = s.save_pending()
+    assert result.pending and result.error.startswith("保存できませんでした。一時ファイル:")
+    s.paths["csv"].unlink()
+    result = s.save_pending()
+    assert not result.pending and result.error is None and result.csv_path.exists()

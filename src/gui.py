@@ -60,7 +60,10 @@ SPAN_AUTO = "自動"
 SPAN_PRESETS = [SPAN_AUTO, "30分", "1時間", "2時間", "3時間", "6時間", "12時間", "24時間"]
 SPAN_RANGE_H = (10 / 60, 100.0)
 
-DISCARD_CONFIRM = "データを保存せずに停止します。よろしいですか？"
+UNSAVED_START = "保存していないデータがあります。破棄して放電を開始しますか？"
+UNSAVED_DISCONNECT = "保存していないデータがあります。破棄して切断しますか？"
+UNSAVED_CLOSE = "保存していないデータがあります。保存して終了しますか？"
+UNSAVED_CLOSE_DETAIL = "はい: 保存して終了\nいいえ: 破棄して終了\nキャンセル: 戻る"
 CLOSE_QUESTION = "放電中です。停止・保存して終了しますか？"
 CLOSE_DETAIL = "はい: 保存して終了\nいいえ: 破棄して終了（データは残りません）\nキャンセル: 放電を続ける"
 
@@ -154,6 +157,46 @@ class FlatButton:
     @property
     def enabled(self) -> bool:
         return str(self.button["state"]) == "normal"
+
+    def invoke(self):
+        return self.button.invoke()
+
+
+class LoadKey:
+    """SDL1020X-E 本体の ON/OFF キーを模したボタン（明るい灰色の縁の中の黒いキー）。負荷 ON の間は黄緑に光る"""
+
+    def __init__(self, parent, fonts: Fonts, command, *, width: int = 132, height: int = 44):
+        self.frame = tk.Frame(parent, width=px(width), height=px(height), bg=C["onoff-frame"])
+        self.frame.pack_propagate(False)
+        self.button = tk.Button(self.frame, text="ON/OFF", command=command, font=fonts.ui_px(15, True),
+                                relief="flat", bd=0, highlightthickness=0, cursor="hand2")
+        self.button.place(x=px(4), y=px(4), relwidth=1, width=-px(8), relheight=1, height=-px(8))
+        self._enabled = True
+        self._lit = False
+        self._apply()
+
+    def set(self, *, enabled: bool, lit: bool) -> None:
+        if (enabled, lit) != (self._enabled, self._lit):
+            self._enabled, self._lit = enabled, lit
+            self._apply()
+
+    def _apply(self) -> None:
+        if self._lit:
+            bg, fg, frame = C["onoff-lit"], C["onoff-lit-text"], C["onoff-lit-frame"]
+        else:
+            bg, frame = C["onoff-key"], C["onoff-frame"]
+            fg = C["onoff-text"] if self._enabled else C["onoff-off-text"]
+        self.button.configure(state="normal" if self._enabled else "disabled", bg=bg, fg=fg, activebackground=bg,
+                              activeforeground=fg, disabledforeground=fg, cursor="hand2" if self._enabled else "arrow")
+        self.frame.configure(bg=frame)
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
+
+    @property
+    def lit(self) -> bool:
+        return self._lit
 
     def invoke(self):
         return self.button.invoke()
@@ -260,6 +303,7 @@ class App:
         self.result = None
         self.values: dict[str, float | None] = dict.fromkeys(("v", "i", "p", "mah", "wh", "elapsed"))
         self.time_span: float | None = None  # グラフの横軸の幅［時間］。None は自動
+        self._saving = False                 # ［CSV保存］の保存処理中
 
         root.title(APP_TITLE)
         root.configure(bg=C["chassis"])
@@ -475,11 +519,11 @@ class App:
         bar = self._bar(parent, 64)
         bar.grid(row=2, column=0, sticky="ew")
         opts = {"height": 44, "size": 15, "padx": 22}
-        self.start_btn = FlatButton(bar, f, "放電開始", self.on_start, "primary", **opts)
-        self.stop_save_btn = FlatButton(bar, f, "停止・保存", self.on_stop_save, "stop", **opts)
-        self.stop_discard_btn = FlatButton(bar, f, "停止・破棄", self.on_stop_discard, "danger", **opts)
+        # ON/OFF：待機中・完了後に押すと放電開始（負荷 ON、黄緑に光る）、放電中に押すと停止（保存は［CSV保存］）
+        self.onoff_btn = LoadKey(bar, f, self.on_onoff)
+        self.csv_btn = FlatButton(bar, f, "CSV保存", self.on_save_csv, "primary", **opts)
         self.graph_btn = FlatButton(bar, f, "グラフ保存", self.on_save_graph, "key", **opts)
-        for k, b in enumerate((self.start_btn, self.stop_save_btn, self.stop_discard_btn, self.graph_btn)):
+        for k, b in enumerate((self.onoff_btn, self.csv_btn, self.graph_btn)):
             b.frame.pack(side="left", padx=(px(16) if k == 0 else px(12), 0))
         # グラフの横軸（時間軸）の幅。測定中も変えられる
         tk.Label(bar, text="横軸", font=f.ui_px(13), bg=C["panel"], fg=C["text-sub"]).pack(
@@ -571,9 +615,9 @@ class App:
 
         # ④ ボタン
         has_data = self.session is not None and bool(self.session.snapshot()[0])
-        self.start_btn.set_enabled(s in (IDLE, DONE))
-        self.stop_save_btn.set_enabled(s in (DISCHARGING, RECONNECTING))
-        self.stop_discard_btn.set_enabled(s in (DISCHARGING, RECONNECTING))
+        self.onoff_btn.set(enabled=s in (IDLE, DONE, DISCHARGING, RECONNECTING) and not self._saving,
+                           lit=s in (DISCHARGING, RECONNECTING, STOPPING))
+        self.csv_btn.set_enabled(s == DONE and self.pending and not self._saving)
         self.graph_btn.set_enabled(s in (DISCHARGING, DONE) or (s == IDLE and has_data))
 
         # ②-6 条件チップ
@@ -587,6 +631,8 @@ class App:
             return f"保存予定: {s.base_name}.csv"
         if self.state == DONE and self.result is not None:
             r = self.result
+            if r.pending:
+                return "未保存（［CSV保存］で保存）"
             if r.discarded:
                 return "破棄しました"
             if r.csv_path:
@@ -651,7 +697,24 @@ class App:
         self.message(text, "error")
         messagebox.showerror(APP_TITLE, text)
 
+    @property
+    def pending(self) -> bool:
+        """ON/OFF で止めたまま、まだ保存していないデータがある"""
+        return self.result is not None and self.result.pending
+
+    def _confirm_discard(self, question: str) -> bool:
+        """保存していないデータがあれば破棄してよいか聞き、よければ破棄する。続けてよければ True"""
+        if not self.pending or self.session is None:
+            return True
+        if not messagebox.askyesno(APP_TITLE, question, icon="warning", default="no"):
+            return False
+        self.session.discard_pending()
+        self.message("保存していないデータを破棄しました")
+        return True
+
     def disconnect(self) -> None:
+        if self._saving or not self._confirm_discard(UNSAVED_DISCONNECT):
+            return
         self._stop_monitor()
         client, self.client = self.client, None
         if client is not None:
@@ -721,8 +784,17 @@ class App:
     def note(self) -> str:
         return self.note_text.get("1.0", "end-1c")
 
+    def on_onoff(self) -> None:
+        """ON/OFF キー：放電中なら停止（保存は［CSV保存］）、待機中・完了後なら放電開始"""
+        if self.state in (DISCHARGING, RECONNECTING):
+            self._request_stop(save=False, keep=True)
+        else:
+            self.on_start()
+
     def on_start(self) -> None:
-        if self.state not in (IDLE, DONE) or self.client is None:
+        if self.state not in (IDLE, DONE) or self.client is None or self._saving:
+            return
+        if not self._confirm_discard(UNSAVED_START):
             return
         try:
             cond = self.read_conditions()
@@ -768,22 +840,43 @@ class App:
             self.session.note = self.note()
         self.note_text.edit_modified(False)
 
-    def on_stop_save(self) -> None:
-        self._request_stop(save=True)
-
-    def on_stop_discard(self) -> None:
-        if self.state not in (DISCHARGING, RECONNECTING):
-            return
-        if not messagebox.askyesno(APP_TITLE, DISCARD_CONFIRM, icon="warning", default="no"):
-            return
-        self._request_stop(save=False)
-
-    def _request_stop(self, save: bool) -> None:
+    def _request_stop(self, save: bool, keep: bool = False) -> None:
         if self.state not in (DISCHARGING, RECONNECTING) or self.session is None:
             return
         self.session.note = self.note()
-        self.session.request_stop(save=save)
+        self.session.request_stop(save=save, keep=keep)
         self._set_state(STOPPING)
+
+    def on_save_csv(self) -> None:
+        """ON/OFF で止めたデータを保存する（<ベース名>.csv と .png）。備考は押した時点の内容"""
+        if self.state != DONE or not self.pending or self._saving or self.session is None:
+            return
+        session = self.session
+        session.note = self.note()
+        self._saving = True
+        self._refresh()
+        self._run_bg(session.save_pending, self._on_csv_saved, self._on_csv_save_failed)
+
+    def _on_csv_saved(self, result) -> None:
+        self._saving = False
+        self.result = result
+        self._refresh()
+        if result.pending:  # 最終 CSV が作れなかった（一時ファイルは残っている）
+            self.message(result.error or "保存できませんでした", "error")
+            messagebox.showerror(APP_TITLE, result.error or "保存できませんでした")
+            return
+        if result.error:  # CSV は保存できたがグラフ画像が保存できなかった
+            self.message(f"保存しました: {result.csv_path} / {result.error}", "error")
+            messagebox.showerror(APP_TITLE, result.error)
+            return
+        self.message(f"保存しました: {result.csv_path}")
+
+    def _on_csv_save_failed(self, exc: BaseException) -> None:
+        self._saving = False
+        self._refresh()
+        log.error("CSV 保存で想定外のエラー", exc_info=exc)
+        self.message(f"保存できませんでした: {exc}", "error")
+        messagebox.showerror(APP_TITLE, f"保存できませんでした: {exc}")
 
     def _on_sample(self, s: recorder.Sample) -> None:
         if self.state == RECONNECTING:
@@ -816,7 +909,9 @@ class App:
             self._start_monitor()
 
         problems = [m for m in ([result.error] if result.error else []) + result.messages if m]
-        if result.discarded:
+        if result.pending:
+            text, level = "停止しました。［CSV保存］で保存できます", "info"
+        elif result.discarded:
             text, level = "停止しました。データは破棄しました", "info"
         elif result.csv_path is None:
             text, level = result.error or "保存できませんでした", "error"
@@ -955,11 +1050,23 @@ class App:
             self._closing_after_stop = True
             self._request_stop(save=(choice == "save"))
             return
-        if self.state in (STARTING, STOPPING):
+        if self.state in (STARTING, STOPPING) or self._saving:
             if self.state == STOPPING:
                 self._closing_after_stop = True
             self.message("処理中です。終わるまでお待ちください", "warn")
             return
+        if self.pending and self.session is not None:
+            answer = messagebox.askyesnocancel(APP_TITLE, UNSAVED_CLOSE, detail=UNSAVED_CLOSE_DETAIL, icon="warning")
+            if answer is None:
+                return
+            if answer:
+                self.session.note = self.note()
+                result = self.session.save_pending()
+                if result.pending:
+                    messagebox.showerror(APP_TITLE, result.error or "保存できませんでした")
+                    return
+            else:
+                self.session.discard_pending()
         self._quit()
 
     def _quit(self) -> None:
