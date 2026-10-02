@@ -45,7 +45,7 @@ COLORS = {
     "onoff-frame": "#c9cdd1",     # キーまわりの明るい灰色の縁
     "onoff-key": "#17191b",       # キー（黒）
     "onoff-text": "#ffffff",
-    "onoff-lit": "#9be03c",       # 負荷 ON の間の外枠と文字（黄緑）
+    "onoff-lit": "#c4d65c",       # 負荷 ON の間の外枠と文字（黄緑）
     "onoff-off-text": "#8a9096",  # 押せないとき（未接続など）
     "akane": "#b7282e",           # グラフ保存（押せるとき）。茜色
     "akane-border": "#8c1d22",
