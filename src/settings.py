@@ -41,7 +41,7 @@ def _in_range(value, lo, hi) -> bool:
 def load(path: Path | None = None) -> Settings:
     """設定を読む。ファイルが無い・壊れている・範囲外の値は既定値にする"""
     path = path or paths.settings_path()
-    s = Settings(folder=str(paths.desktop_dir()))
+    s = Settings(folder=str(paths.app_dir()))  # 保存先の初期値は exe と同じフォルダ
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
     except FileNotFoundError:

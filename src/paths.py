@@ -46,18 +46,3 @@ def settings_path() -> Path:
 def log_path() -> Path:
     return app_dir() / LOG_FILE
 
-
-def desktop_dir() -> Path:
-    """デスクトップのフォルダ（OneDrive に移動されている場合も含む）"""
-    if sys.platform == "win32":
-        try:
-            import ctypes
-
-            buf = ctypes.create_unicode_buffer(260)
-            # CSIDL_DESKTOPDIRECTORY = 0x10
-            if ctypes.windll.shell32.SHGetFolderPathW(None, 0x10, None, 0, buf) == 0 and buf.value:
-                return Path(buf.value)
-        except Exception:  # noqa: BLE001
-            pass
-    desktop = Path.home() / "Desktop"
-    return desktop if desktop.is_dir() else Path.home()

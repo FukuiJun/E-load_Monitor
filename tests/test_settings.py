@@ -9,7 +9,7 @@ def test_defaults_when_missing(app_dir):
     s = settings.load()
     assert s.host == "192.168.10.2" and s.port == 5025
     assert s.current == 0.4 and s.cutoff == 3.5 and s.interval == 1.0  # 初めて起動したときは 0.400 A / 3.500 V
-    assert s.folder
+    assert s.folder == str(app_dir)  # 保存先の初期値は exe と同じフォルダ
 
 
 def test_roundtrip_only_allowed_keys(app_dir, tmp_path):
