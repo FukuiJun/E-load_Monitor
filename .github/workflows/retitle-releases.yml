@@ -1,0 +1,29 @@
+# 一度だけ使うワークフロー：公開済みリリースの題名「SDL放電ロガー vX.Y.Z」を「SDL_DischargeLogger vX.Y.Z」に付け替える。
+# 添付ファイルや本文は変えない。付け替えが終わったらこのファイルは削除する。
+name: Retitle releases
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  retitle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Retitle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release list --limit 100 --json tagName,name --jq '.[] | [.tagName, .name] | @tsv' |
+          while IFS=$'\t' read -r tag name; do
+            case "$name" in
+              "SDL放電ロガー "*)
+                gh release edit "$tag" --title "SDL_DischargeLogger $tag"
+                echo "$tag: $name -> SDL_DischargeLogger $tag" ;;
+              *)
+                echo "$tag: そのまま（$name）" ;;
+            esac
+          done

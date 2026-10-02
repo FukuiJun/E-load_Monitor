@@ -116,11 +116,12 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             # 既にリリースがある場合（画面から先に作った等）は添付だけ行う
             gh release upload $tag $zip --clobber
+            gh release edit $tag --title "SDL_DischargeLogger $tag"
           } elseif ($env:EVENT_NAME -eq "workflow_dispatch") {
             # タグが無ければ、このビルドのコミットにタグを付けてリリースを作る
-            gh release create $tag $zip --title "SDL放電ロガー $tag" --notes $notes --target $env:GITHUB_SHA
+            gh release create $tag $zip --title "SDL_DischargeLogger $tag" --notes $notes --target $env:GITHUB_SHA
           } else {
-            gh release create $tag $zip --title "SDL放電ロガー $tag" --notes $notes --verify-tag
+            gh release create $tag $zip --title "SDL_DischargeLogger $tag" --notes $notes --verify-tag
           }
           if ($LASTEXITCODE -ne 0) { throw "リリースの作成・添付に失敗しました" }
           Write-Host "Release: https://github.com/${{ github.repository }}/releases/tag/$tag"
