@@ -627,7 +627,8 @@ class App:
         self.onoff_btn.set(enabled=s in (IDLE, DONE, DISCHARGING, RECONNECTING) and not self._saving,
                            lit=s in (DISCHARGING, RECONNECTING, STOPPING))
         self.csv_btn.set_enabled(s == DONE and self.pending and not self._saving)
-        self.graph_btn.set_enabled(s in (DISCHARGING, DONE) or (s == IDLE and has_data))
+        # グラフ保存も CSV保存と同じく、負荷を OFF にしてから押せる（放電中・再接続中は押せない）
+        self.graph_btn.set_enabled((s == DONE or (s == IDLE and has_data)) and not self._saving)
 
         # ②-6 条件チップ
         for label, value in zip(self.chip_values, display.chip_values(*self._shown_conditions())):

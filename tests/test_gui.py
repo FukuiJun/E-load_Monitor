@@ -180,7 +180,8 @@ def test_discharge_auto_stop_saves(make_app, fake, dialogs, tmp_path):
     assert str(app.model_entry["state"]) == "disabled"
     assert all(str(rb["state"]) == "disabled" for rb in app.radios)
     assert str(app.note_text["state"]) == "normal"
-    assert enabled(app) == {"onoff_btn": True, "csv_btn": False, "graph_btn": True, "connect_btn": False}
+    # グラフ保存は CSV保存と同じく、放電中は押せない（OFF にしてから押せる）
+    assert enabled(app) == {"onoff_btn": True, "csv_btn": False, "graph_btn": False, "connect_btn": False}
     assert app.onoff_btn.lit  # 放電中は ON/OFF キーの外枠と文字が黄緑に光り、キーは緑がかった黒になる
     import theme
 
@@ -188,7 +189,7 @@ def test_discharge_auto_stop_saves(make_app, fake, dialogs, tmp_path):
     assert str(app.onoff_btn.frame["bg"]) == lit
     assert str(app.onoff_btn.button["fg"]) == lit
     assert str(app.onoff_btn.button["bg"]) == theme.COLORS["onoff-key-lit"]
-    assert str(app.graph_btn.button["bg"]) == "#b7282e"  # グラフ保存は押せるとき茜色
+    assert str(app.graph_btn.button["bg"]) == "#e9ebed"  # 押せないときは灰色
     app.note_text.insert("end", "→変更")
     assert pump(app.root, lambda: values(app)["mah"].endswith("mAh"))
     fake.voltage_override = 2.5
@@ -202,6 +203,7 @@ def test_discharge_auto_stop_saves(make_app, fake, dialogs, tmp_path):
     assert app.state_label["text"] == "完了: 終止電圧到達" and app.load_label["text"] == "LOAD OFF"
     assert app.plan_label["text"] == f"保存済み: {base}.csv"
     assert enabled(app) == {"onoff_btn": True, "csv_btn": False, "graph_btn": True, "connect_btn": True}
+    assert str(app.graph_btn.button["bg"]) == "#b7282e"  # グラフ保存は押せるとき茜色
     assert not app.onoff_btn.lit
     assert values(app)["v"] == "2.500 V"  # 最終値で止める
     assert app.model_var.get() == "NCR18650B"  # 完了後も値は残す（Q-D2）
@@ -329,13 +331,14 @@ def test_save_graph_names(make_app, fake, tmp_path):
     assert len(pngs) == 1 and len(pngs[0].stem) == len("graph_20261001_143005")
     connect(app, fake, tmp_path)
     start(app)
-    app.on_save_graph()
+    app.onoff_btn.invoke()
+    assert pump(app.root, lambda: app.state == "done")
+    assert app.graph_btn.button["state"] == "normal"  # OFF にしたら押せる
+    app.graph_btn.invoke()
     base = app.session.base_name
     named = list(tmp_path.glob(f"{base}_*.png"))
     assert len(named) == 1 and len(named[0].stem) == len(base) + 7
     assert app.message_var.get().endswith(f"グラフを保存しました: {named[0]}")
-    app.onoff_btn.invoke()
-    assert pump(app.root, lambda: app.state == "done")
 
 
 def test_disconnect_clears(make_app, fake, tmp_path):
