@@ -109,7 +109,7 @@ def test_disconnected_state(make_app):
     app.radios[1].invoke()
     app.radios[4].invoke()
     assert app.plan_label["text"] == f"保存予定: {Path('YYYYMMDD_HHMM_SDL') / 'YYYYMMDD_HHMM_4v1_pana.csv'}"
-    assert [c["text"] for c in app.chip_values] == ["1.000 A", "3.000 V", "1.0 s", "4.1 V", "Panasonic"]
+    assert [c["text"] for c in app.chip_values] == ["0.400 A", "3.500 V", "1.0 s", "4.1 V", "Panasonic"]
 
 
 def test_connect_idle_state(make_app, fake, tmp_path):
@@ -179,7 +179,8 @@ def test_discharge_auto_stop_saves(make_app, fake, dialogs, tmp_path):
     run_dir = app.session.run_dir  # 保存先の中の出力フォルダ <YYYYMMDD_HHMM>_SDL
     assert run_dir.parent == tmp_path and run_dir.name.endswith("_SDL") and run_dir.name[:13] == app.session.base_name[:13]
     assert app.plan_label["text"] == f"保存予定: {Path(run_dir.name) / (app.session.base_name + '.csv')}"
-    assert app.message_var.get().endswith("放電開始（1.000 A / 終止 3.000 V）")
+    assert app.message_var.get().endswith("放電開始（0.400 A / 終止 3.500 V）")
+    assert not any(c[0] == "askyesno" for c in dialogs.calls)  # 初期値（0.400 A / 3.500 V）では確認を出さない
     assert str(app.model_entry["state"]) == "disabled"
     assert all(str(rb["state"]) == "disabled" for rb in app.radios)
     assert str(app.note_text["state"]) == "normal"
@@ -519,3 +520,35 @@ def test_scaled_layout(make_app, monkeypatch):
         assert app.fonts.ui_px(20, True)[1] == -30
     finally:
         theme.set_scale(1.0)
+
+
+@pytest.mark.parametrize("current, cutoff, expected", [
+    ("2.000", "3.500", ["放電電流が 2.0 A 以上です（設定 2.000 A）"]),
+    ("0.400", "3.000", ["終止電圧が 3.0 V 以下です（設定 3.000 V）"]),
+    ("2.500", "2.800", ["放電電流が 2.0 A 以上です（設定 2.500 A）", "終止電圧が 3.0 V 以下です（設定 2.800 V）"]),
+])
+def test_confirm_unusual_conditions(make_app, fake, dialogs, tmp_path, current, cutoff, expected):
+    """放電電流 2A 以上・終止電圧 3.0V 以下なら、開始前に設定を間違えていないか確認する。いいえなら開始しない"""
+    app = make_app()
+    connect(app, fake, tmp_path)
+    app.current_var.set(current)
+    app.cutoff_var.set(cutoff)
+    dialogs.answer = False
+    app.onoff_btn.invoke()
+    name, text = dialogs.calls[-1][:2]
+    assert name == "askyesno"
+    assert text == "設定を確認してください。\n\n" + "\n".join(f"・{t}" for t in expected) + "\n\nこの設定で放電を開始しますか？"
+    assert app.state == "idle" and app.session is None and not fake.load_on
+    dialogs.answer = True
+    start(app)
+    assert fake.load_on
+
+
+def test_no_confirm_just_inside_limits(make_app, fake, dialogs, tmp_path):
+    """1.999 A・3.001 V は確認なしで開始する"""
+    app = make_app()
+    connect(app, fake, tmp_path)
+    app.current_var.set("1.999")
+    app.cutoff_var.set("3.001")
+    start(app)
+    assert not any(c[0] == "askyesno" for c in dialogs.calls)

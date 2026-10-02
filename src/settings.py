@@ -29,8 +29,8 @@ class Settings:
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
     folder: str = ""
-    current: float = 1.000
-    cutoff: float = 3.000
+    current: float = 0.400  # 初めて起動したとき（設定ファイルが無いとき）の放電電流
+    cutoff: float = 3.500   # 同じく終止電圧
     interval: float = 1.0
 
 

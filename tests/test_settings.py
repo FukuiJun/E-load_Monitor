@@ -8,7 +8,7 @@ import settings
 def test_defaults_when_missing(app_dir):
     s = settings.load()
     assert s.host == "192.168.10.2" and s.port == 5025
-    assert s.current == 1.0 and s.cutoff == 3.0 and s.interval == 1.0
+    assert s.current == 0.4 and s.cutoff == 3.5 and s.interval == 1.0  # 初めて起動したときは 0.400 A / 3.500 V
     assert s.folder
 
 
@@ -27,7 +27,7 @@ def test_broken_or_out_of_range_values_fall_back(app_dir):
                     "interval": 0.1}), encoding="utf-8")
     s = settings.load()
     assert s.host == "192.168.10.2" and s.port == 5025
-    assert s.current == 1.0 and s.cutoff == 3.0 and s.interval == 1.0
+    assert s.current == 0.4 and s.cutoff == 3.5 and s.interval == 1.0
     (app_dir / "sdl_logger_settings.json").write_text("{壊れた", encoding="utf-8")
     assert settings.load().host == "192.168.10.2"
 

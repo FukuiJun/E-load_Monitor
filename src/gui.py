@@ -65,6 +65,9 @@ UNSAVED_DISCONNECT = "保存していないデータがあります。破棄し�
 UNSAVED_CLOSE = "保存していないデータがあります。保存して終了しますか？"
 UNSAVED_CLOSE_DETAIL = "はい: 保存して終了\nいいえ: 破棄して終了\nキャンセル: 戻る"
 CLOSE_QUESTION = "放電中です。停止・保存して終了しますか？"
+# 設定の間違いを防ぐため、放電電流がこの値以上・終止電圧がこの値以下なら開始前に確認する
+CONFIRM_CURRENT_A = 2.0
+CONFIRM_CUTOFF_V = 3.0
 CLOSE_DETAIL = "はい: 保存して終了\nいいえ: 破棄して終了（データは残りません）\nキャンセル: 放電を続ける"
 
 
@@ -95,6 +98,16 @@ def parse_span(text: str) -> float | None:
     if not SPAN_RANGE_H[0] - 1e-9 <= hours <= SPAN_RANGE_H[1]:
         raise InputError("横軸の幅は「自動」、または 10分〜100時間 で入力してください（例: 90分、2.5時間）")
     return hours
+
+
+def condition_warnings(cond) -> list[str]:
+    """開始前に確認したい設定（放電電流 2A 以上・終止電圧 3.0V 以下）"""
+    items = []
+    if cond.current >= CONFIRM_CURRENT_A - 1e-9:
+        items.append(f"放電電流が {CONFIRM_CURRENT_A:.1f} A 以上です（設定 {cond.current:.3f} A）")
+    if cond.cutoff <= CONFIRM_CUTOFF_V + 1e-9:
+        items.append(f"終止電圧が {CONFIRM_CUTOFF_V:.1f} V 以下です（設定 {cond.cutoff:.3f} V）")
+    return items
 
 
 def format_span(hours: float | None) -> str:
@@ -714,6 +727,18 @@ class App:
         """ON/OFF で止めたまま、まだ保存していないデータがある"""
         return self.result is not None and self.result.pending
 
+    def _confirm_conditions(self, cond: Conditions) -> bool:
+        """放電電流が大きい・終止電圧が低いときは、設定を間違えていないか確認する。続けてよければ True"""
+        items = condition_warnings(cond)
+        if not items:
+            return True
+        text = "設定を確認してください。\n\n" + "\n".join(f"・{t}" for t in items) + "\n\nこの設定で放電を開始しますか？"
+        if messagebox.askyesno(APP_TITLE, text, icon="warning", default="no"):
+            log.info("確認のうえ開始: %s", " / ".join(items))
+            return True
+        self.message("放電を開始しませんでした（設定を確認してください）", "warn")
+        return False
+
     def _confirm_discard(self, question: str) -> bool:
         """保存していないデータがあれば破棄してよいか聞き、よければ破棄する。続けてよければ True"""
         if not self.pending or self.session is None:
@@ -806,12 +831,14 @@ class App:
     def on_start(self) -> None:
         if self.state not in (IDLE, DONE) or self.client is None or self._saving:
             return
-        if not self._confirm_discard(UNSAVED_START):
-            return
         try:
             cond = self.read_conditions()
         except InputError as e:
             messagebox.showerror(APP_TITLE, str(e))
+            return
+        if not self._confirm_conditions(cond):
+            return
+        if not self._confirm_discard(UNSAVED_START):
             return
         self.current_var.set(f"{cond.current:.3f}")
         self.cutoff_var.set(f"{cond.cutoff:.3f}")
