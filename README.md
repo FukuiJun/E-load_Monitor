@@ -1,6 +1,6 @@
 # SDL放電ロガー
 
-Siglent 電子負荷 **SDL1020X-E** を LAN（TCP ソケット）で操作して、リチウムイオン電池の CC 放電試験を記録する Windows 用アプリです（実行ファイルは `SDL_Monitor.exe`）。
+Siglent 電子負荷 **SDL1020X-E** を LAN（TCP ソケット）で操作して、リチウムイオン電池の CC 放電試験を記録する Windows 用アプリです（実行ファイルは `SDL_DischargeLogger.exe`）。
 
 - 電圧・電流・電力を一定周期で取得してグラフにリアルタイム表示
 - 放電容量（mAh）・電力量（Wh）を積算
@@ -15,14 +15,14 @@ Siglent 電子負荷 **SDL1020X-E** を LAN（TCP ソケット）で操作して
 
 ## 導入
 
-`SDL_Monitor.exe` を好きなフォルダ（例：`C:\Tools\SDL_Monitor\`）に置いてダブルクリックで起動します。
+`SDL_DischargeLogger.exe` を好きなフォルダ（例：`C:\Tools\SDL_DischargeLogger\`）に置いてダブルクリックで起動します。
 Python や NI-VISA などのドライバのインストールは不要です。
 
 - 設定ファイル `sdl_logger_settings.json` とログ `sdl_logger.log` は **exe と同じフォルダ** に作られます。
   書き込みできるフォルダ（`C:\Program Files` 以外）に置いてください。
-- exe は GitHub のリポジトリ画面右側の **Releases** から最新版を開き、`SDL_Monitor-vX.Y.Z.zip` をダウンロードします
-  （zip の中に `SDL_Monitor.exe` と README。同じ場所の「Source code」はソースコードで、exe は入っていません）。
-  リリース前の最新ビルドは **Actions** → 「Build SDL_Monitor.exe」→ **Artifacts** の `SDL_Monitor` にあります。
+- exe は GitHub のリポジトリ画面右側の **Releases** から最新版を開き、`SDL_DischargeLogger-vX.Y.Z.zip` をダウンロードします
+  （zip の中に `SDL_DischargeLogger.exe` と README。同じ場所の「Source code」はソースコードで、exe は入っていません）。
+  リリース前の最新ビルドは **Actions** → 「Build SDL_DischargeLogger.exe」→ **Artifacts** の `SDL_DischargeLogger` にあります。
 
 ## ネットワーク設定（PC と SDL を LAN ケーブルで直結）
 
@@ -45,7 +45,7 @@ Windows のファイアウォール／セキュリティソフトが通信を止
 
 ## 使い方
 
-1. PC と SDL を LAN ケーブルで直結し、`SDL_Monitor.exe` を起動する
+1. PC と SDL を LAN ケーブルで直結し、`SDL_DischargeLogger.exe` を起動する
 2. ［接続］を押す（IP・ポートは前回値）。右上が「● 接続中」になり、メッセージ欄に IDN（`Siglent Technologies,SDL1020X-E,…`）が出ます。
    放電前でも電圧・電流・電力が 1 秒ごとに表示されます
 3. 必要ならメーカー・満充電電圧を選び（不明なら「未選択」のまま）、型番・備考を入力する（いずれも任意）
@@ -213,7 +213,7 @@ py -3.12 src\cli.py --host 127.0.0.1 --current 1.0 --cutoff 3.0 --folder out --m
 ## ビルド（exe の作成）
 
 Windows 11 で `build.bat` をダブルクリックします（Python 3.12 が必要）。
-パッケージのインストール → テスト → PyInstaller の順に実行し、`dist\SDL_Monitor.exe`（単一ファイル）ができます。
+パッケージのインストール → テスト → PyInstaller の順に実行し、`dist\SDL_DischargeLogger.exe`（単一ファイル）ができます。
 
 GitHub に push すると、GitHub Actions（Windows）でも同じビルドと起動確認（起動時間の測定）が行われ、
 exe が Artifacts に保存されます。
@@ -221,7 +221,7 @@ exe が Artifacts に保存されます。
 ### リリース
 
 1. `src/main.py` の `VERSION` を新しいバージョン（例 `1.1.0`）にしてコミット・push
-2. GitHub の **Actions** →「Build SDL_Monitor.exe」→ **Run workflow** で、`release_version` に同じバージョンを入れて実行
+2. GitHub の **Actions** →「Build SDL_DischargeLogger.exe」→ **Run workflow** で、`release_version` に同じバージョンを入れて実行
    （または `v1.1.0` のタグを push）
-3. ビルド・テスト・起動確認が通ると、Releases に `SDL_Monitor-v1.1.0.zip` が載ります
+3. ビルド・テスト・起動確認が通ると、Releases に `SDL_DischargeLogger-v1.1.0.zip` が載ります
    （タグと `VERSION` が一致しないときは失敗します）

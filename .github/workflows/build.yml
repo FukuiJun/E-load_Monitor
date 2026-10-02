@@ -1,4 +1,4 @@
-name: Build SDL_Monitor.exe
+name: Build SDL_DischargeLogger.exe
 
 on:
   push:
@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      # パッケージのインストール → テスト（pytest）→ PyInstaller で単一 exe（dist\SDL_Monitor.exe）
+      # パッケージのインストール → テスト（pytest）→ PyInstaller で単一 exe（dist\SDL_DischargeLogger.exe）
       - name: Build (build.bat)
         shell: cmd
         run: build.bat
@@ -73,12 +73,12 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SDL_Monitor
+          name: SDL_DischargeLogger
           path: out/
           if-no-files-found: error
 
       # リリースするときだけ（タグ vX.Y.Z のプッシュ／Run workflow でバージョン指定）：
-      # Releases に SDL_Monitor-vX.Y.Z.zip（中に SDL_Monitor.exe と README.md）を載せる
+      # Releases に SDL_DischargeLogger-vX.Y.Z.zip（中に SDL_DischargeLogger.exe と README.md）を載せる
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release_version != '')
         shell: pwsh
@@ -97,12 +97,12 @@ jobs:
           if ($tag -ne "v$version") {
             throw "タグ $tag と src\main.py の VERSION ($version) が一致しません。タグは v$version にしてください（VERSION を変える場合は先にコミット）"
           }
-          $zip = "SDL_Monitor-$tag.zip"
+          $zip = "SDL_DischargeLogger-$tag.zip"
           Compress-Archive -Path out\* -DestinationPath $zip
           $notes = @"
           ## ダウンロードと導入
           1. 下の **$zip** をダウンロード（「Source code」はソースコードで、exe は入っていません）
-          2. zip を右クリック →「すべて展開」→ 中の **SDL_Monitor.exe** を好きなフォルダに置いてダブルクリック
+          2. zip を右クリック →「すべて展開」→ 中の **SDL_DischargeLogger.exe** を好きなフォルダに置いてダブルクリック
              （Python・NI-VISA などのインストールは不要）
           3. 設定ファイル・ログは exe と同じフォルダに作られます。書き込めるフォルダ（C:\Program Files 以外）に置いてください
 

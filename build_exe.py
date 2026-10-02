@@ -1,4 +1,4 @@
-"""PyInstaller で単一 exe（dist/SDL_Monitor.exe）を作る（build.bat から呼ぶ）
+"""PyInstaller で単一 exe（dist/SDL_DischargeLogger.exe）を作る（build.bat から呼ぶ）
 
 exe のファイル名は EXE_NAME。画面のタイトル（SDL放電ロガー）とは別に決めている。
 """
@@ -11,7 +11,7 @@ from pathlib import Path
 import PyInstaller.__main__
 
 ROOT = Path(__file__).resolve().parent
-EXE_NAME = "SDL_Monitor"
+EXE_NAME = "SDL_DischargeLogger"
 EXCLUDES = ["PyQt5", "PyQt6", "PySide2", "PySide6", "wx", "gi", "IPython", "jupyter", "notebook",
             "pytest", "scipy", "pandas", "sphinx"]
 
