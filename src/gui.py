@@ -9,13 +9,14 @@ from __future__ import annotations
 import logging
 import os
 import queue
+import re
 import sys
 import threading
 import time
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 from tkinter import font as tkfont
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -29,11 +30,12 @@ import settings as settings_mod
 from display import DASH
 from sdl_client import CONNECT_ERROR_MESSAGE, SDLClient, SDLError
 from session import Conditions, DischargeSession, StartError
-from theme import C, Fonts
+import theme
+from theme import C, Fonts, px
 
 log = logging.getLogger("sdl.gui")
 
-APP_TITLE = "SDL放電ロガー"
+APP_TITLE = "SDL_DischargeLogger"
 MODEL_MAX_LEN = 40
 POLL_MS = 100
 GRAPH_MS = 500
@@ -52,6 +54,11 @@ DISCHARGING = "discharging"     # 放電中
 RECONNECTING = "reconnecting"   # 再接続中
 STOPPING = "stopping"
 DONE = "done"                   # 完了
+
+# グラフの横軸の幅の選択肢（自由入力もできる：「90分」「2.5時間」「4」(時間) など）
+SPAN_AUTO = "自動"
+SPAN_PRESETS = [SPAN_AUTO, "30分", "1時間", "2時間", "3時間", "6時間", "12時間", "24時間"]
+SPAN_RANGE_H = (10 / 60, 100.0)
 
 DISCARD_CONFIRM = "データを保存せずに停止します。よろしいですか？"
 CLOSE_QUESTION = "放電中です。停止・保存して終了しますか？"
@@ -72,6 +79,30 @@ def parse_number(text: str, name: str, lo: float, hi: float, unit: str, digits: 
     return value
 
 
+def parse_span(text: str) -> float | None:
+    """横軸の幅の入力 → 時間（「自動」は None）。「90分」「2.5時間」「2h」、単位なしは時間"""
+    t = text.strip().replace("　", "").lower()
+    if t in ("", SPAN_AUTO, "auto"):
+        return None
+    m = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)\s*(分|min|m|時間|h|hr)?", t)
+    if not m:
+        raise InputError("横軸の幅は「自動」、または 10分〜100時間 で入力してください（例: 90分、2.5時間）")
+    value = float(m.group(1))
+    hours = value / 60 if m.group(2) in ("分", "min", "m") else value
+    if not SPAN_RANGE_H[0] - 1e-9 <= hours <= SPAN_RANGE_H[1]:
+        raise InputError("横軸の幅は「自動」、または 10分〜100時間 で入力してください（例: 90分、2.5時間）")
+    return hours
+
+
+def format_span(hours: float | None) -> str:
+    if hours is None:
+        return SPAN_AUTO
+    minutes = round(hours * 60)
+    if hours < 1 and abs(hours * 60 - minutes) < 1e-6:
+        return f"{minutes}分"
+    return f"{hours:g}時間"
+
+
 def try_number(text: str, rng: tuple[float, float]) -> float | None:
     try:
         return parse_number(text, "", *rng, "", 3)
@@ -80,6 +111,14 @@ def try_number(text: str, rng: tuple[float, float]) -> float | None:
 
 
 # ---------------------------------------------------------------------- 部品
+class LcdCanvas(FigureCanvasTkAgg):
+    """グラフの描画領域。matplotlib が自分で行う表示倍率の補正を止め、画面全体と同じ倍率（theme.SCALE）に
+    そろえる（figure の dpi は 100 × theme.SCALE で作る。補正が重なると Windows で 2 重に拡大される）"""
+
+    def _update_device_pixel_ratio(self, event=None):
+        return None
+
+
 class FlatButton:
     """色を指定できるボタン（Windows の ttk はボタンの背景色を無視するため tk で作る）"""
 
@@ -95,8 +134,8 @@ class FlatButton:
         self.style = style
         bg, fg, border, bold = self.STYLES[style]
         font = fonts.ui_px(size, bold)
-        width = tkfont.Font(font=font).measure(text) + padx * 2 + 2
-        self.frame = tk.Frame(parent, width=width, height=height, bg=border)
+        width = tkfont.Font(font=font).measure(text) + px(padx) * 2 + 2
+        self.frame = tk.Frame(parent, width=width, height=px(height), bg=border)
         self.frame.pack_propagate(False)
         self.button = tk.Button(self.frame, text=text, command=command, font=font, relief="flat", bd=0,
                                 highlightthickness=0, cursor="hand2")
@@ -124,7 +163,7 @@ class BoxEntry:
     """枠つきの入力欄（高さ固定）"""
 
     def __init__(self, parent, var: tk.StringVar, font, *, width: int = 1, height: int = 30, justify="left"):
-        self.frame = tk.Frame(parent, width=width, height=height, bg=C["input-border"])
+        self.frame = tk.Frame(parent, width=px(width), height=px(height), bg=C["input-border"])
         self.frame.pack_propagate(False)
         self.frame.grid_propagate(False)
         inner = tk.Frame(self.frame, bg=C["input-bg"])
@@ -133,7 +172,7 @@ class BoxEntry:
                               bg=C["input-bg"], fg=C["text"], disabledbackground=C["input-bg"],
                               readonlybackground=C["input-bg"], disabledforeground=C["text"],
                               insertbackground=C["text"], justify=justify)
-        self.entry.place(x=7, rely=0.5, relwidth=1, width=-14, anchor="w")
+        self.entry.place(x=px(7), rely=0.5, relwidth=1, width=-px(14), anchor="w")
 
     def set_state(self, state: str) -> None:
         self.entry.configure(state=state)
@@ -147,8 +186,8 @@ class Segmented:
         self.frame = tk.Frame(parent, bg=C["panel"])
         self.items = []
         for k, (label, value) in enumerate(options):
-            holder = tk.Frame(self.frame, height=34, bg=C["key-border"])
-            holder.grid(row=0, column=k, sticky="ew", padx=(0 if k == 0 else 3, 0 if k == len(options) - 1 else 3))
+            holder = tk.Frame(self.frame, height=px(34), bg=C["key-border"])
+            holder.grid(row=0, column=k, sticky="ew", padx=(0 if k == 0 else px(3), 0 if k == len(options) - 1 else px(3)))
             holder.pack_propagate(False)
             self.frame.columnconfigure(k, weight=1, uniform="seg")
             rb = tk.Radiobutton(holder, text=label, value=value, variable=var, indicatoron=0, relief="flat",
@@ -181,13 +220,32 @@ class Segmented:
 
 
 def hline(parent, color: str) -> tk.Frame:
-    return tk.Frame(parent, height=1, bg=color)
+    return tk.Frame(parent, height=px(1), bg=color)
 
 
 # ---------------------------------------------------------------------- 画面
+def screen_scale(root: tk.Tk) -> float:
+    """画面の拡大率。Windows の表示倍率（96 dpi = 100%）に合わせ、ウィンドウが画面に収まる範囲で決める。
+
+    環境変数 SDL_LOGGER_SCALE で指定もできる（確認用）。
+    """
+    override = os.environ.get("SDL_LOGGER_SCALE")
+    if override:
+        try:
+            return max(0.5, min(float(override), 4.0))
+        except ValueError:
+            pass
+    dpi_scale = root.winfo_fpixels("1i") / 96.0
+    if dpi_scale < 1.1:  # 100%（Windows の倍率は 125% から。Linux の 100 dpi 前後の画面も 100% 扱い）
+        return 1.0
+    fit = min(root.winfo_screenwidth() / WINDOW_W, (root.winfo_screenheight() - 80) / WINDOW_H)
+    return round(max(1.0, min(dpi_scale, fit)), 2)
+
+
 class App:
     def __init__(self, root: tk.Tk):
         self.root = root
+        theme.set_scale(screen_scale(root))
         self.fonts = Fonts(root)
         self.settings = settings_mod.load()
         self.state = DISCONNECTED
@@ -201,11 +259,12 @@ class App:
         self.reconnect_count = (0, 0)
         self.result = None
         self.values: dict[str, float | None] = dict.fromkeys(("v", "i", "p", "mah", "wh", "elapsed"))
+        self.time_span: float | None = None  # グラフの横軸の幅［時間］。None は自動
 
         root.title(APP_TITLE)
         root.configure(bg=C["chassis"])
         sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
-        w, h = min(WINDOW_W, sw), min(WINDOW_H, max(sh - 60, 400))
+        w, h = min(px(WINDOW_W), sw), min(px(WINDOW_H), max(sh - px(60), 400))
         root.minsize(w, h)
         root.geometry(f"{w}x{h}")
         root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -235,12 +294,12 @@ class App:
     # ================================================================== 組み立て
     def _build(self) -> None:
         outer = tk.Frame(self.root, bg=C["chassis"])
-        outer.pack(fill="both", expand=True, padx=20, pady=20)
+        outer.pack(fill="both", expand=True, padx=px(20), pady=px(20))
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(1, weight=1)
         self._build_connection_bar(outer)
         middle = tk.Frame(outer, bg=C["chassis"])
-        middle.grid(row=1, column=0, sticky="nsew", pady=16)
+        middle.grid(row=1, column=0, sticky="nsew", pady=px(16))
         middle.columnconfigure(0, weight=1)
         middle.rowconfigure(0, weight=1)
         self._build_lcd(middle)
@@ -248,7 +307,7 @@ class App:
         self._build_operation_bar(outer)
 
     def _bar(self, parent, height: int) -> tk.Frame:
-        bar = tk.Frame(parent, height=height, bg=C["panel"], highlightthickness=1,
+        bar = tk.Frame(parent, height=px(height), bg=C["panel"], highlightthickness=1,
                        highlightbackground=C["panel-border"])
         bar.pack_propagate(False)
         return bar
@@ -259,37 +318,37 @@ class App:
         bar = self._bar(parent, 48)
         bar.grid(row=0, column=0, sticky="ew")
         tk.Label(bar, text=APP_TITLE, font=f.ui_px(20, True), bg=C["panel"], fg=C["text"]).pack(
-            side="left", padx=(16, 14))
+            side="left", padx=(px(16), px(14)))
         self.model_label = tk.Label(bar, text="", font=f.ui_px(12), bg=C["panel"], fg=C["text-sub"])
-        self.model_label.pack(side="left", pady=(6, 0))
+        self.model_label.pack(side="left", pady=(px(6), px(0)))
 
         # 右側（右から順に置く）
-        pill = tk.Frame(bar, bg=C["bezel"], padx=10, pady=4)
-        pill.pack(side="right", padx=(10, 16))
-        self.pill_dot = tk.Canvas(pill, width=8, height=8, bg=C["bezel"], highlightthickness=0)
-        self.pill_dot_item = self.pill_dot.create_oval(0, 0, 8, 8, fill=C["idle"], outline="")
-        self.pill_dot.pack(side="left", padx=(0, 6))
+        pill = tk.Frame(bar, bg=C["bezel"], padx=px(10), pady=px(4))
+        pill.pack(side="right", padx=(px(10), px(16)))
+        self.pill_dot = tk.Canvas(pill, width=px(8), height=px(8), bg=C["bezel"], highlightthickness=0)
+        self.pill_dot_item = self.pill_dot.create_oval(0, 0, px(8), px(8), fill=C["idle"], outline="")
+        self.pill_dot.pack(side="left", padx=(px(0), px(6)))
         self.pill_var = tk.StringVar(value="未接続")
         tk.Label(pill, textvariable=self.pill_var, font=f.ui_px(12), bg=C["bezel"], fg="#f2f2f2").pack(side="left")
         self.connect_btn = FlatButton(bar, f, "接続", self.on_connect, height=30, size=13, padx=14)
-        self.connect_btn.frame.pack(side="right", padx=(10, 0))
+        self.connect_btn.frame.pack(side="right", padx=(px(10), px(0)))
         self.port_var = tk.StringVar(value=str(self.settings.port))
         self.port_box = BoxEntry(bar, self.port_var, f.num_px(14), width=60)
         self.port_box.frame.pack(side="right")
-        tk.Label(bar, text="Port", font=f.ui_px(13), bg=C["panel"], fg=C["text-sub"]).pack(side="right", padx=(10, 8))
+        tk.Label(bar, text="Port", font=f.ui_px(13), bg=C["panel"], fg=C["text-sub"]).pack(side="right", padx=(px(10), px(8)))
         self.host_var = tk.StringVar(value=self.settings.host)
         self.host_box = BoxEntry(bar, self.host_var, f.num_px(14), width=120)
         self.host_box.frame.pack(side="right")
-        tk.Label(bar, text="IP", font=f.ui_px(13), bg=C["panel"], fg=C["text-sub"]).pack(side="right", padx=(0, 8))
+        tk.Label(bar, text="IP", font=f.ui_px(13), bg=C["panel"], fg=C["text-sub"]).pack(side="right", padx=(px(0), px(8)))
         # テスト・旧コードとの互換用
         self.host_entry, self.port_entry = self.host_box.entry, self.port_box.entry
 
     # ② 液晶パネル
     def _build_lcd(self, parent) -> None:
         f = self.fonts
-        bezel = tk.Frame(parent, bg=C["bezel"], padx=12, pady=12)
-        bezel.grid(row=0, column=0, sticky="nsew", padx=(0, 16))
-        lcd = tk.Frame(bezel, bg=C["lcd-bg"], padx=16)
+        bezel = tk.Frame(parent, bg=C["bezel"], padx=px(12), pady=px(12))
+        bezel.grid(row=0, column=0, sticky="nsew", padx=(px(0), px(16)))
+        lcd = tk.Frame(bezel, bg=C["lcd-bg"], padx=px(16))
         lcd.pack(fill="both", expand=True)
         lcd.columnconfigure(0, weight=1)
         lcd.rowconfigure(4, weight=1)
@@ -297,45 +356,46 @@ class App:
 
         # ②-1 ステータス行
         row = tk.Frame(lcd, bg=bg)
-        row.grid(row=0, column=0, sticky="ew", pady=(10, 6))
-        tk.Label(row, text="CC", font=f.ui_px(13, True), bg=C["mode-chip"], fg=C["lcd-white"], padx=10).pack(side="left")
+        row.grid(row=0, column=0, sticky="ew", pady=(px(10), px(6)))
+        tk.Label(row, text="CC", font=f.ui_px(13, True), bg=C["mode-chip"], fg=C["lcd-white"], padx=px(10)).pack(side="left")
         self.load_label = tk.Label(row, text="LOAD OFF", font=f.ui_px(13, True), bg=bg, fg=C["lcd-white"])
-        self.load_label.pack(side="left", padx=(10, 0))
+        self.load_label.pack(side="left", padx=(px(10), px(0)))
         self.state_label = tk.Label(row, text="未接続", font=f.ui_px(13), bg=bg, fg=C["lcd-label"])
-        self.state_label.pack(side="left", padx=(10, 0))
+        self.state_label.pack(side="left", padx=(px(10), px(0)))
         self.plan_label = tk.Label(row, text="", font=f.ui_px(13), bg=bg, fg="#c9c9c9", anchor="e")
         self.plan_label.pack(side="right")
         hline(lcd, C["lcd-rule"]).grid(row=1, column=0, sticky="ew")
 
         # ②-2 数値表示（3 列×2 段、右揃え）
         grid = tk.Frame(lcd, bg=bg)
-        grid.grid(row=2, column=0, sticky="ew", pady=8, padx=4)
+        grid.grid(row=2, column=0, sticky="ew", pady=px(8), padx=px(4))
         self.value_labels: dict[str, tk.Label] = {}
         for k, key in enumerate(("v", "i", "p", "mah", "wh", "elapsed")):
             grid.columnconfigure(k % 3, weight=1, uniform="val")
             lbl = tk.Label(grid, text=DASH, font=f.num_px(40 if k < 3 else 30), bg=bg, fg=C["lcd-dim"], anchor="e")
-            lbl.grid(row=k // 3, column=k % 3, sticky="ew", padx=(12 if k % 3 else 0, 0))
+            lbl.grid(row=k // 3, column=k % 3, sticky="ew", padx=(px(12) if k % 3 else 0, 0))
             self.value_labels[key] = lbl
         hline(lcd, C["lcd-rule"]).grid(row=3, column=0, sticky="ew")
 
         # ②-3〜②-5 グラフ
-        self.figure = Figure(figsize=(7.7, 3.6), dpi=100, facecolor=bg)
-        self.canvas = FigureCanvasTkAgg(self.figure, master=lcd)
+        # 拡大率に合わせて dpi を上げる（線・文字が倍率どおりの解像度で描かれる）
+        self.figure = Figure(figsize=(7.7, 3.6), dpi=100 * theme.SCALE, facecolor=bg)
+        self.canvas = LcdCanvas(self.figure, master=lcd)
         self.plot = plotting.LcdPlot(self.figure)
         widget = self.canvas.get_tk_widget()
-        widget.configure(bg=bg, highlightthickness=0, height=300)
-        widget.grid(row=4, column=0, sticky="nsew", pady=(8, 0))
+        widget.configure(bg=bg, highlightthickness=0, height=px(300))
+        widget.grid(row=4, column=0, sticky="nsew", pady=(px(8), px(0)))
         self.canvas.mpl_connect("resize_event", lambda _e: (self.plot.layout(), self.canvas.draw_idle()))
 
         # ②-6 条件チップ
         chips = tk.Frame(lcd, bg=bg)
-        chips.grid(row=5, column=0, sticky="ew", pady=(8, 12))
+        chips.grid(row=5, column=0, sticky="ew", pady=(px(8), px(12)))
         self.chip_values: list[tk.Label] = []
         for k, name in enumerate(("電流", "終止電圧", "取得周期", "満充電", "メーカー")):
             chips.columnconfigure(k, weight=1, uniform="chip")
             border = C["lcd-accent"] if name == "メーカー" else C["chip-border"]
-            cell = tk.Frame(chips, bg=bg, highlightthickness=1, highlightbackground=border, pady=4)
-            cell.grid(row=0, column=k, sticky="ew", padx=(0 if k == 0 else 3, 0 if k == 4 else 3))
+            cell = tk.Frame(chips, bg=bg, highlightthickness=1, highlightbackground=border, pady=px(4))
+            cell.grid(row=0, column=k, sticky="ew", padx=(0 if k == 0 else px(3), 0 if k == 4 else px(3)))
             tk.Label(cell, text=name, font=f.ui_px(12), bg=bg, fg=C["lcd-label"]).pack()
             value = tk.Label(cell, text=DASH, font=f.ui_px(14) if name == "メーカー" else f.num_px(14),
                              bg=bg, fg=C["lcd-white"])
@@ -345,12 +405,12 @@ class App:
     # ③ 試験条件パネル
     def _build_side(self, parent) -> None:
         f = self.fonts
-        side = tk.Frame(parent, width=SIDE_W, bg=C["panel"], highlightthickness=1,
+        side = tk.Frame(parent, width=px(SIDE_W), bg=C["panel"], highlightthickness=1,
                         highlightbackground=C["panel-border"])
         side.grid(row=0, column=1, sticky="ns")
         side.pack_propagate(False)
         body = tk.Frame(side, bg=C["panel"])
-        body.pack(fill="both", expand=True, padx=18, pady=16)
+        body.pack(fill="both", expand=True, padx=px(18), pady=px(16))
         lab = {"bg": C["panel"], "fg": C["text-sub"], "font": f.ui_px(13)}
 
         tk.Label(body, text="試験条件", font=f.ui_px(15, True), bg=C["panel"], fg=C["text"]).pack(anchor="w")
@@ -359,16 +419,16 @@ class App:
         self.segments = []
         for label, var, options in (("メーカー", self.maker_var, recorder.MAKERS),
                                     ("満充電電圧", self.full_var, recorder.FULL_VOLTAGES)):
-            tk.Label(body, text=label, **lab).pack(anchor="w", pady=(12, 6))
+            tk.Label(body, text=label, **lab).pack(anchor="w", pady=(px(12), px(6)))
             seg = Segmented(body, f, var, [("未選択", "")] + [(o, o) for o in options])
             seg.frame.pack(fill="x")
             self.segments.append(seg)
         self.radios = [rb for seg in self.segments for rb in seg.radios]
 
         form = tk.Frame(body, bg=C["panel"])
-        form.pack(fill="x", pady=(12, 0))
+        form.pack(fill="x", pady=(px(12), px(0)))
         form.columnconfigure(1, weight=1)
-        form.columnconfigure(0, minsize=96)
+        form.columnconfigure(0, minsize=px(96))
         self.model_var = tk.StringVar(value="")
         # 最大 40 文字（貼り付けで超えたときは 40 文字で切る）
         self.model_var.trace_add("write", lambda *_: len(self.model_var.get()) > MODEL_MAX_LEN
@@ -381,28 +441,28 @@ class App:
                 ("終止電圧 [V]", self.cutoff_var, f.num_px(15)), ("取得周期 [s]", self.interval_var, f.num_px(15))]
         self.condition_boxes: list[BoxEntry] = []
         for r, (label, var, font) in enumerate(rows):
-            tk.Label(form, text=label, **lab).grid(row=r, column=0, sticky="w", pady=4)
+            tk.Label(form, text=label, **lab).grid(row=r, column=0, sticky="w", pady=px(4))
             box = BoxEntry(form, var, font)
-            box.frame.grid(row=r, column=1, sticky="ew", pady=4)
+            box.frame.grid(row=r, column=1, sticky="ew", pady=px(4))
             self.condition_boxes.append(box)
         self.model_entry = self.condition_boxes[0].entry
         r = len(rows)
-        tk.Label(form, text="保存先", **lab).grid(row=r, column=0, sticky="w", pady=4)
+        tk.Label(form, text="保存先", **lab).grid(row=r, column=0, sticky="w", pady=px(4))
         ff = tk.Frame(form, bg=C["panel"])
-        ff.grid(row=r, column=1, sticky="ew", pady=4)
+        ff.grid(row=r, column=1, sticky="ew", pady=px(4))
         ff.columnconfigure(0, weight=1)
         self.folder_box = BoxEntry(ff, self.folder_var, f.ui_px(12))
         self.folder_box.set_state("readonly")
         self.folder_box.frame.grid(row=0, column=0, sticky="ew")
         self.folder_btn = FlatButton(ff, f, "参照", self.on_browse, height=30, size=12, padx=10)
-        self.folder_btn.frame.grid(row=0, column=1, padx=(6, 0))
+        self.folder_btn.frame.grid(row=0, column=1, padx=(px(6), px(0)))
 
         memo_head = tk.Frame(body, bg=C["panel"])
-        memo_head.pack(fill="x", pady=(12, 6))
+        memo_head.pack(fill="x", pady=(px(12), px(6)))
         tk.Label(memo_head, text="備考", **lab).pack(side="left")
         tk.Label(memo_head, text="（放電中も編集可）", font=f.ui_px(11), bg=C["panel"], fg="#4a5056").pack(
-            side="left", padx=(4, 0))
-        self.note_text = tk.Text(body, font=f.ui_px(13), wrap="char", undo=True, relief="flat", bd=0, padx=8, pady=8,
+            side="left", padx=(px(4), px(0)))
+        self.note_text = tk.Text(body, font=f.ui_px(13), wrap="char", undo=True, relief="flat", bd=0, padx=px(8), pady=px(8),
                                  bg=C["memo-bg"], fg=C["text"], insertbackground=C["text"], spacing1=2, spacing3=2,
                                  highlightthickness=1, highlightbackground=C["accent-blue"],
                                  highlightcolor=C["accent-blue"], width=10, height=4)
@@ -420,11 +480,21 @@ class App:
         self.stop_discard_btn = FlatButton(bar, f, "停止・破棄", self.on_stop_discard, "danger", **opts)
         self.graph_btn = FlatButton(bar, f, "グラフ保存", self.on_save_graph, "key", **opts)
         for k, b in enumerate((self.start_btn, self.stop_save_btn, self.stop_discard_btn, self.graph_btn)):
-            b.frame.pack(side="left", padx=(16 if k == 0 else 12, 0))
+            b.frame.pack(side="left", padx=(px(16) if k == 0 else px(12), 0))
+        # グラフの横軸（時間軸）の幅。測定中も変えられる
+        tk.Label(bar, text="横軸", font=f.ui_px(13), bg=C["panel"], fg=C["text-sub"]).pack(
+            side="left", padx=(px(20), px(6)))
+        self.root.option_add("*TCombobox*Listbox.font", f.ui_px(14))
+        self.span_var = tk.StringVar(value=SPAN_AUTO)
+        self.span_box = ttk.Combobox(bar, textvariable=self.span_var, values=SPAN_PRESETS, width=7,
+                                     font=f.ui_px(14), state="normal")
+        self.span_box.pack(side="left")
+        for seq in ("<<ComboboxSelected>>", "<Return>", "<FocusOut>"):
+            self.span_box.bind(seq, lambda _e: self.apply_span())
         self.message_var = tk.StringVar(value="")
         self.message_label = tk.Label(bar, textvariable=self.message_var, font=f.ui_px(13), bg=C["panel"],
                                       fg=C["text-sub"], anchor="e", justify="right")
-        self.message_label.pack(side="left", fill="both", expand=True, padx=(16, 16))
+        self.message_label.pack(side="left", fill="both", expand=True, padx=(px(16), px(16)))
         self.message_label.bind("<Configure>", lambda e: self.message_label.configure(wraplength=max(e.width, 100)))
 
     # ================================================================== 表示の更新
@@ -791,12 +861,25 @@ class App:
 
     def _draw_graph(self, force: bool = False) -> None:
         t, v, i, cutoff, current = self._graph_source()
-        key = (id(self.session), len(t), cutoff, current)
+        key = (id(self.session), len(t), cutoff, current, self.time_span)
         if not force and key == self._graph_key:
             return
         self._graph_key = key
-        self.plot.update(t, v, i, cutoff, current)
+        self.plot.update(t, v, i, cutoff, current, self.time_span)
         self.canvas.draw_idle()
+
+    def apply_span(self) -> None:
+        """横軸の幅の入力を反映する（不正な入力なら前の値に戻す）"""
+        try:
+            span = parse_span(self.span_var.get())
+        except InputError as e:
+            self.span_var.set(format_span(self.time_span))
+            self.message(str(e), "warn")
+            return
+        self.span_var.set(format_span(span))
+        if span != self.time_span:
+            self.time_span = span
+            self._draw_graph(force=True)
 
     def on_save_graph(self) -> None:
         t, v, i, cutoff, current = self._graph_source()

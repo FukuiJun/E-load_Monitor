@@ -100,3 +100,26 @@ def test_render_png_size(tmp_path):
     head = path.read_bytes()[:24]
     assert head[:8] == b"\x89PNG\r\n\x1a\n"
     assert struct.unpack(">II", head[16:24]) == (1600, 1000)
+
+
+def test_time_window_manual_span():
+    """横軸の手動設定：幅を固定し、経過時間が幅を超えたら最新の点が右端に来るように送る"""
+    assert plotting.time_window(1800, None) == (0.0, 1.0, 0.5)          # 自動
+    assert plotting.time_window(1800, 3.0) == (0.0, 3.0, 0.5)           # 幅より短い：0 から
+    xmin, xmax, step = plotting.time_window(5 * 3600, 2.0)              # 幅より長い：最新 2 時間
+    assert (xmin, xmax, step) == (3.0, 5.0, 0.5)
+    assert plotting.tick_step(0.5) == 1 / 6 and plotting.tick_step(24) == 2.0 and plotting.tick_step(48) == 4.0
+
+
+def test_lcd_manual_span_scrolls():
+    fig, canvas, plot = _lcd()
+    t = [float(k) for k in range(0, 5 * 3600, 10)]
+    v = [4.2 - 0.0001 * k for k in range(len(t))]
+    plot.update(t, v, [1.0] * len(t), 3.0, 1.0, span_hours=1.0)
+    canvas.draw()
+    lo, hi = plot.ax_i.get_xlim()
+    assert abs(hi - t[-1] / 3600) < 1e-9 and abs(hi - lo - 1.0) < 1e-9
+    xs = plot.ax_v._sdl_line.get_xdata()
+    assert min(xs) >= lo - 0.01  # 範囲外の古い点は描かない（左端の外の 1 点を除く）
+    labels = [lb.get_text() for lb in plot.ax_i.get_xticklabels() if lb.get_text()]
+    assert labels[-1].endswith(" h") or labels[-1].count(":") == 1

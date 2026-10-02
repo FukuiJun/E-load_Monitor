@@ -61,6 +61,24 @@ MPL_UI_FAMILIES = ["BIZ UDPGothic", "Yu Gothic", "Meiryo", "MS Gothic", "IPAPGot
 MPL_NUM_FAMILIES = ["Consolas", "DejaVu Sans Mono"]
 
 
+# 画面の拡大率。DESIGN.md の寸法（px）はすべて 100% のときの値で、Windows の表示倍率（125%・150% など）に
+# 合わせてこの倍率をかけて描く（ぼやけないように、アプリを高 DPI 対応にしたうえで自分で拡大する）
+SCALE = 1.0
+
+
+def set_scale(value: float) -> None:
+    global SCALE
+    SCALE = value
+
+
+def px(value: float) -> int:
+    """DESIGN.md の寸法 → 実際の画面の px"""
+    if value == 0:
+        return 0
+    scaled = round(value * SCALE)
+    return scaled if scaled != 0 else (1 if value > 0 else -1)
+
+
 def pick_family(available: set[str], candidates: list[str], fallback: str) -> str:
     for name in candidates:
         if name in available:
@@ -69,7 +87,7 @@ def pick_family(available: set[str], candidates: list[str], fallback: str) -> st
 
 
 class Fonts:
-    """tkinter のフォント。大きさは px（tk の負の値）で指定する"""
+    """tkinter のフォント。大きさは DESIGN.md の px で指定する（拡大率をかけて tk の負の値＝px にする）"""
 
     def __init__(self, root):
         from tkinter import font as tkfont
@@ -78,8 +96,8 @@ class Fonts:
         self.ui = pick_family(available, UI_FAMILIES, "TkDefaultFont")
         self.num = pick_family(available, NUM_FAMILIES, "TkFixedFont")
 
-    def ui_px(self, px: int, bold: bool = False):
-        return (self.ui, -px, "bold") if bold else (self.ui, -px)
+    def ui_px(self, size: int, bold: bool = False):
+        return (self.ui, -px(size), "bold") if bold else (self.ui, -px(size))
 
-    def num_px(self, px: int, bold: bool = False):
-        return (self.num, -px, "bold") if bold else (self.num, -px)
+    def num_px(self, size: int, bold: bool = False):
+        return (self.num, -px(size), "bold") if bold else (self.num, -px(size))

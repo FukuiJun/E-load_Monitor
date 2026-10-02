@@ -7,6 +7,7 @@ pyplot は使わず matplotlib.figure.Figure を直接使う（PNG は画面と�
 
 from __future__ import annotations
 
+import bisect
 import math
 from pathlib import Path
 from typing import Sequence
@@ -89,6 +90,37 @@ def time_axis(max_elapsed_s: float) -> tuple[float, float]:
     return xmax, step
 
 
+def tick_step(span_hours: float) -> float:
+    """横軸の幅［時間］に対する目盛りの間隔［時間］"""
+    if span_hours > 24:
+        return 4.0
+    if span_hours > 12:
+        return 2.0
+    if span_hours > 6:
+        return 1.0
+    if span_hours > 1:
+        return 0.5
+    if span_hours > 0.5:
+        return 0.25
+    return 1 / 6  # 10 分
+
+
+def time_window(max_elapsed_s: float, span_hours: float | None = None) -> tuple[float, float, float]:
+    """横軸の (左端, 右端, 目盛り間隔)［時間］。
+
+    span_hours が None なら自動（0 から time_axis の上限まで）。指定したときはその幅で固定し、
+    経過時間が幅を超えたら最新の点が右端に来るように送る。
+    """
+    if span_hours is None:
+        xmax, step = time_axis(max_elapsed_s)
+        return 0.0, xmax, step
+    t = max_elapsed_s / 3600
+    step = tick_step(span_hours)
+    if t <= span_hours:
+        return 0.0, span_hours, step
+    return t - span_hours, t, step
+
+
 def format_hmm(hours: float) -> str:
     total = int(round(hours * 60))
     return f"{total // 60}:{total % 60:02d}"
@@ -124,19 +156,24 @@ def current_ylim(set_current: float | None, currents: Sequence[float] = ()) -> t
     return 0.0, max(top, 0.001) * 1.5
 
 
-def _apply_common(ax_v, ax_i, elapsed, voltage, current, cutoff, set_current, *, suffix_h: bool) -> None:
+def _apply_common(ax_v, ax_i, elapsed, voltage, current, cutoff, set_current, *, suffix_h: bool,
+                  span_hours: float | None = None) -> tuple[float, float, list[float]]:
     max_t = elapsed[-1] if len(elapsed) else 0.0
-    xmax, step = time_axis(max_t)
+    xmin, xmax, step = time_window(max_t, span_hours)
+    # 横軸の範囲に入る点だけを描く（左端の外の 1 点は線をつなぐために残す）
+    start = max(bisect.bisect_left(elapsed, xmin * 3600) - 1, 0) if xmin > 0 else 0
+    elapsed, voltage, current = elapsed[start:], voltage[start:], current[start:]
     xs_v, ys_v = decimate(elapsed, voltage)
     xs_i, ys_i = decimate(elapsed, current)
     ax_v._sdl_line.set_data([x / 3600 for x in xs_v], ys_v)
     ax_i._sdl_line.set_data([x / 3600 for x in xs_i], ys_i)
 
-    ticks = [k * step for k in range(int(round(xmax / step)) + 1)]
-    ax_i.set_xlim(0, xmax)
+    first = math.ceil(xmin / step - 1e-9)
+    ticks = [k * step for k in range(first, int(math.floor(xmax / step + 1e-9)) + 1)]
+    ax_i.set_xlim(xmin, xmax)
     for ax in (ax_v, ax_i):
         ax.xaxis.set_major_locator(FixedLocator(ticks))
-    last = ticks[-1]
+    last = ticks[-1] if ticks else xmax
     ax_i.xaxis.set_major_formatter(FuncFormatter(
         lambda x, _pos: format_hmm(x) + (" h" if suffix_h and abs(x - last) < 1e-9 else "")))
 
@@ -147,6 +184,7 @@ def _apply_common(ax_v, ax_i, elapsed, voltage, current, cutoff, set_current, *,
     ax_i.set_ylim(lo, hi)
     ax_i.yaxis.set_major_locator(FixedLocator([lo + (hi - lo) * k / 3 for k in range(4)]))
     ax_v._sdl_cutoff.set_ydata([cutoff, cutoff] if cutoff is not None else [float("nan")] * 2)
+    return xmin, xmax, ticks
 
 
 # ---- 画面（液晶スタイル） ----
@@ -159,9 +197,9 @@ class LcdPlot:
         figure.set_facecolor(C["lcd-bg"])
         self.ax_v = figure.add_axes((0.1, 0.4, 0.85, 0.5))
         self.ax_i = figure.add_axes((0.1, 0.1, 0.85, 0.2), sharex=self.ax_v)
-        dpi = figure.dpi
-        self._tick_font = {"family": _fonts["num"], "size": px_to_pt(11, dpi)}
-        head = px_to_pt(12, dpi)
+        # 文字の大きさは DESIGN.md の px（100% のとき）で決める。拡大率は figure の dpi に入っている
+        self._tick_font = {"family": _fonts["num"], "size": px_to_pt(11, 100)}
+        head = px_to_pt(12, 100)
         for ax in (self.ax_v, self.ax_i):
             ax.set_facecolor(C["lcd-bg"])
             for spine in ax.spines.values():
@@ -185,7 +223,9 @@ class LcdPlot:
 
     def layout(self) -> None:
         """余白・電流グラフの高さを px で固定し、電圧グラフを残りに伸ばす"""
-        w, h = self.figure.get_size_inches() * self.figure.dpi
+        # 余白は DESIGN.md の px。figure の dpi が 100 を超える（画面の拡大率）ときはその分広げる
+        k = self.figure.dpi / 100
+        w, h = self.figure.get_size_inches() * self.figure.dpi / k
         w, h = max(w, 200), max(h, 200)
         left, right = LCD_LEFT / w, 1 - LCD_RIGHT / w
         v_bottom = (LCD_BOTTOM + LCD_CURRENT_H + LCD_GAP) / h
@@ -193,16 +233,19 @@ class LcdPlot:
         self.ax_v.set_position((left, v_bottom, right - left, max(1 - LCD_TOP / h - v_bottom, 0.05)))
 
     def update(self, elapsed: Sequence[float], voltage: Sequence[float], current: Sequence[float],
-               cutoff: float | None, set_current: float | None) -> None:
-        _apply_common(self.ax_v, self.ax_i, elapsed, voltage, current, cutoff, set_current, suffix_h=True)
+               cutoff: float | None, set_current: float | None, span_hours: float | None = None) -> None:
+        """span_hours: 横軸の幅［時間］。None なら自動"""
+        xmin, xmax, values = _apply_common(self.ax_v, self.ax_i, elapsed, voltage, current, cutoff, set_current,
+                                           suffix_h=True, span_hours=span_hours)
         self.legend.set_text(f"- - 終止電圧 {cutoff:.3f} V" if cutoff is not None else "")
         # 目盛り数字は Consolas。横軸の最初は左揃え・最後は右揃え（液晶の枠からはみ出さないように）
         for ax in (self.ax_v, self.ax_i):
             for tick in ax.xaxis.get_major_ticks() + ax.yaxis.get_major_ticks():
                 tick.label1.set_fontproperties(self._tick_font)
-        ticks = self.ax_i.xaxis.get_major_ticks()
-        for k, tick in enumerate(ticks):
-            tick.label1.set_horizontalalignment("left" if k == 0 else "right" if k == len(ticks) - 1 else "center")
+        ticks = self.ax_i.xaxis.get_major_ticks()[:len(values)]
+        for tick, x in zip(ticks, values):
+            edge = "left" if abs(x - xmin) < 1e-9 else "right" if abs(x - xmax) < 1e-9 else "center"
+            tick.label1.set_horizontalalignment(edge)
 
 
 # ---- PNG（白背景スタイル） ----

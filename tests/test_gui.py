@@ -393,3 +393,52 @@ def test_side_panel_fixed_width_when_enlarged(make_app):
     pump(app.root, lambda: graph.winfo_width() > g0, timeout=3)
     assert side.winfo_width() == w0 == 400
     assert graph.winfo_width() > g0
+
+
+def test_window_title(make_app):
+    """左上（タイトルバー）のアプリ名は SDL_DischargeLogger"""
+    app = make_app()
+    assert app.root.title() == "SDL_DischargeLogger"
+
+
+def test_time_span_control(make_app, fake, tmp_path):
+    """グラフの横軸の幅：選択肢・自由入力（90分 など）・不正入力は元に戻す。測定中も変えられる"""
+    import gui
+
+    assert gui.parse_span("自動") is None
+    assert gui.parse_span("90分") == 1.5
+    assert gui.parse_span("2.5時間") == 2.5
+    assert gui.parse_span("4") == 4.0
+    assert gui.format_span(0.5) == "30分" and gui.format_span(2.5) == "2.5時間" and gui.format_span(None) == "自動"
+    app = make_app()
+    connect(app, fake, tmp_path)
+    start(app)
+    app.span_var.set("2時間")
+    app.apply_span()
+    assert app.time_span == 2.0
+    assert app.plot.ax_i.get_xlim() == (0.0, 2.0)
+    app.span_var.set("abc")
+    app.apply_span()
+    assert app.time_span == 2.0 and app.span_var.get() == "2時間"
+    assert "10分〜100時間" in app.message_var.get()
+    app.span_var.set("自動")
+    app.apply_span()
+    assert app.time_span is None
+    app.on_stop_save()
+    assert pump(app.root, lambda: app.state == "done")
+
+
+def test_scaled_layout(make_app, monkeypatch):
+    """表示倍率 150% のとき：寸法・文字・グラフの解像度が 1.5 倍（ぼやけ対策）"""
+    import theme
+
+    monkeypatch.setenv("SDL_LOGGER_SCALE", "1.5")
+    try:
+        app = make_app()
+        app.root.update()
+        side = app.note_text.master.master
+        assert side.winfo_reqwidth() == 600 or side.winfo_width() == 600
+        assert app.figure.dpi == 150
+        assert app.fonts.ui_px(20, True)[1] == -30
+    finally:
+        theme.set_scale(1.0)
