@@ -73,6 +73,7 @@ class DischargeSession:
         self.reconnect_interval = reconnect_interval
         self.events: queue.Queue = queue.Queue()
         self.base_name: str | None = None
+        self.run_dir: Path | None = None  # 保存先の中に作る出力フォルダ <YYYYMMDD_HHMM>_SDL
         self.paths: dict[str, Path] = {}
         self.start_time: datetime | None = None
         self.start_monotonic: float | None = None
@@ -143,9 +144,14 @@ class DischargeSession:
 
         self.start_monotonic = t0
         self.start_time = start_time
+        try:
+            self.run_dir = recorder.create_run_dir(self.folder, start_time)
+        except OSError as e:
+            self.client.load_off_safely()
+            raise StartError(f"保存先にフォルダを作れません: {self.folder}（{e}）") from e
         base = recorder.make_base_name(start_time, c.full_voltage, c.maker)
-        self.base_name = recorder.unique_base_name(self.folder, base)
-        self.paths = recorder.output_paths(self.folder, self.base_name)
+        self.base_name = recorder.unique_base_name(self.run_dir, base)
+        self.paths = recorder.output_paths(self.run_dir, self.base_name)
         try:
             self._writer = PartialWriter(self.paths["partial"])
             self._record(start_time, 0.0, first)
@@ -154,6 +160,7 @@ class DischargeSession:
             if self._writer is not None:
                 self._writer.close()
                 _unlink(self.paths["partial"])
+            recorder.remove_dir_if_empty(self.run_dir)
             raise StartError(f"一時ファイルを作れません: {self.paths['partial']}（{e}）") from e
 
         log.info("放電開始 %s 電流 %.3fA 終止 %.3fV 周期 %gs 開始電圧 %.4fV", self.base_name, c.current,
@@ -195,7 +202,7 @@ class DischargeSession:
             if result.save_ok:
                 result.pending = False
         else:
-            self._save(result, self._end_time, recorder.unique_base_name(self.folder, self.base_name))
+            self._save(result, self._end_time, recorder.unique_base_name(self.run_dir, self.base_name))
         return result
 
     def discard_pending(self) -> None:
@@ -204,6 +211,7 @@ class DischargeSession:
         if result is None or not result.pending:
             return
         _unlink(self.paths["partial"])
+        recorder.remove_dir_if_empty(self.run_dir)
         result.pending = False
         result.discarded = True
         log.info("保存せずに破棄 %s", self.base_name)
@@ -330,6 +338,7 @@ class DischargeSession:
             self._save(result, end_time)
         else:
             _unlink(self.paths["partial"])
+            recorder.remove_dir_if_empty(self.run_dir)
         self.result = result
         self._finished.set()
         self.events.put(("finished", result))
@@ -337,7 +346,7 @@ class DischargeSession:
     def _save(self, result: SessionResult, end_time: datetime, base: str | None = None) -> None:
         """CSV と PNG を保存する。base を渡すとその名前で（もう一度保存するとき）"""
         c = self.cond
-        paths = self.paths if base is None else recorder.output_paths(self.folder, base)
+        paths = self.paths if base is None else recorder.output_paths(self.run_dir, base)
         info = TestInfo(start=self.start_time, end=end_time, end_reason=result.end_reason, maker=c.maker,
                         full_voltage=c.full_voltage, model=c.model, current=c.current, cutoff=c.cutoff,
                         mah=self._integrator.mah, wh=self._integrator.wh, interval=c.interval,

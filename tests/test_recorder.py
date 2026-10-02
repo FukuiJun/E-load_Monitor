@@ -170,3 +170,35 @@ def test_full_voltage_tag():
     for name in (recorder.output_paths(Path("."), recorder.make_base_name(START, "4.2V", "マクセル")).values()):
         stem = name.name[:-len(".csv")]
         assert "." not in stem and stem == stem.lower()
+
+
+def test_run_dir_name_and_suffix(tmp_path):
+    """出力フォルダは <YYYYMMDD_HHMM>_SDL。同名があれば _SDL_2, _SDL_3 …"""
+    assert recorder.run_dir_name(START) == "20261001_1430_SDL"
+    first = recorder.create_run_dir(tmp_path, START)
+    assert first == tmp_path / "20261001_1430_SDL" and first.is_dir()
+    assert recorder.create_run_dir(tmp_path, START) == tmp_path / "20261001_1430_SDL_2"
+    (tmp_path / "20261001_1430_SDL_3").write_text("同名のファイル")
+    assert recorder.create_run_dir(tmp_path, START) == tmp_path / "20261001_1430_SDL_4"
+
+
+def test_remove_dir_if_empty(tmp_path):
+    empty, used = tmp_path / "a", tmp_path / "b"
+    empty.mkdir()
+    used.mkdir()
+    (used / "x.csv").write_text("x")
+    recorder.remove_dir_if_empty(empty)
+    recorder.remove_dir_if_empty(used)
+    assert not empty.exists() and used.exists()
+
+
+def test_find_partial_files_in_run_dirs(tmp_path):
+    """起動時の検出は出力フォルダ（*_SDL*）の中も見る"""
+    run = tmp_path / "20261001_1430_SDL_2"
+    run.mkdir()
+    (run / "20261001_1430_4v1_pana_partial.csv").write_text("x")
+    (run / "20261001_1430_4v1_pana.csv").write_text("x")
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "z_partial.csv").write_text("x")
+    assert recorder.find_partial_files(tmp_path) == [run / "20261001_1430_4v1_pana_partial.csv"]

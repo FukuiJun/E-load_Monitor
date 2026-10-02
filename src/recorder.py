@@ -21,6 +21,7 @@ COLUMNS = ["日時", "経過時間[s]", "電圧[V]", "電流[A]", "電力[W]", "
 # ファイル名にはドットや大文字を使わない（拡張子の . を除く）
 PARTIAL_SUFFIX = "_partial.csv"
 LEGACY_PARTIAL_SUFFIX = ".partial.csv"  # v1.0.5 までの一時ファイル（起動時の検出だけに使う）
+RUN_DIR_SUFFIX = "_SDL"  # 放電 1 回分の出力をまとめるフォルダ <YYYYMMDD_HHMM>_SDL
 # 放電開始前に確保されている必要がある空き容量（24 時間分の CSV が約 7MB）
 MIN_FREE_BYTES = 20 * 1024 * 1024
 
@@ -61,12 +62,44 @@ def unique_base_name(folder: Path, base: str) -> str:
     return candidate
 
 
-def find_partial_files(folder: Path) -> list[Path]:
+def run_dir_name(start: datetime) -> str:
+    """放電 1 回分の出力フォルダの名前 <YYYYMMDD_HHMM>_SDL"""
+    return start.strftime("%Y%m%d_%H%M") + RUN_DIR_SUFFIX
+
+
+def create_run_dir(folder: Path, start: datetime) -> Path:
+    """保存先の中に出力フォルダを作る。同名のフォルダ（またはファイル）があれば _2, _3 … を付ける"""
+    folder, name = Path(folder), run_dir_name(start)
+    candidate, n = name, 1
+    while True:
+        path = folder / candidate
+        try:
+            path.mkdir()
+            return path
+        except FileExistsError:
+            n += 1
+            candidate = f"{name}_{n}"
+
+
+def remove_dir_if_empty(path: Path | None) -> None:
+    if path is None:
+        return
     try:
-        found = set(Path(folder).glob(f"*{PARTIAL_SUFFIX}")) | set(Path(folder).glob(f"*{LEGACY_PARTIAL_SUFFIX}"))
-        return sorted(found)
+        path.rmdir()  # 空でなければ OSError で何もしない
+    except OSError:
+        pass
+
+
+def find_partial_files(folder: Path) -> list[Path]:
+    """保存先と、その中の出力フォルダ（*_SDL*）にある一時ファイル"""
+    folder = Path(folder)
+    found: set[Path] = set()
+    try:
+        for pattern in (f"*{PARTIAL_SUFFIX}", f"*{LEGACY_PARTIAL_SUFFIX}", f"*{RUN_DIR_SUFFIX}*/*{PARTIAL_SUFFIX}"):
+            found.update(p for p in folder.glob(pattern) if p.is_file())
     except OSError:
         return []
+    return sorted(found)
 
 
 def check_writable(folder: Path) -> None:

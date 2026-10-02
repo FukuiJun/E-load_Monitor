@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
 import recorder
 
@@ -57,10 +58,10 @@ def chip_values(current: float | None, cutoff: float | None, interval: float | N
 
 
 def planned_name_pattern(full_voltage: str | None, maker: str | None) -> str:
-    """待機中の「保存予定」に出すファイル名のパターン"""
+    """待機中の「保存予定」に出すパターン（出力フォルダ YYYYMMDD_HHMM_SDL の中のファイル名）"""
     parts = ["YYYYMMDD_HHMM"]
     if full_voltage:
         parts.append(recorder.full_voltage_tag(full_voltage))
     if maker:
         parts.append(recorder.MAKER_ABBR[maker])
-    return "_".join(parts) + ".csv"
+    return str(Path("YYYYMMDD_HHMM" + recorder.RUN_DIR_SUFFIX) / ("_".join(parts) + ".csv"))

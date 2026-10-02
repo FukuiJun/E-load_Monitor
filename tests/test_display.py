@@ -1,6 +1,7 @@
 """表示書式（DESIGN.md 8 章、D-AC-04）"""
 
 from datetime import datetime
+from pathlib import Path
 
 import display
 
@@ -42,9 +43,11 @@ def test_chip_values_and_dash():
 
 
 def test_planned_name_pattern():
-    assert display.planned_name_pattern("4.1V", "Panasonic") == "YYYYMMDD_HHMM_4v1_pana.csv"
-    assert display.planned_name_pattern(None, "マクセル") == "YYYYMMDD_HHMM_maxell.csv"
-    assert display.planned_name_pattern(None, None) == "YYYYMMDD_HHMM.csv"
+    """出力フォルダ YYYYMMDD_HHMM_SDL の中のファイル名"""
+    folder = Path("YYYYMMDD_HHMM_SDL")
+    assert display.planned_name_pattern("4.1V", "Panasonic") == str(folder / "YYYYMMDD_HHMM_4v1_pana.csv")
+    assert display.planned_name_pattern(None, "マクセル") == str(folder / "YYYYMMDD_HHMM_maxell.csv")
+    assert display.planned_name_pattern(None, None) == str(folder / "YYYYMMDD_HHMM.csv")
 
 
 def test_colors_defined_in_one_place():

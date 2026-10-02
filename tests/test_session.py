@@ -241,16 +241,22 @@ def test_partial_has_rows_while_running(fake, tmp_path):
     s.wait(5)
 
 
-def test_unique_name_when_started_twice_in_same_second(fake, tmp_path):
-    names = []
+def test_run_dir_per_discharge(fake, tmp_path):
+    """出力は保存先の中の <YYYYMMDD_HHMM>_SDL フォルダにまとめる。同じ分に 2 回始めると _SDL_2"""
+    dirs = []
     for _ in range(2):
         s = make_session(fake, tmp_path)
         s.start()
-        names.append(s.base_name)
+        dirs.append(s.run_dir)
+        assert s.paths["partial"].parent == s.run_dir
         s.request_stop(save=True)
-        s.wait(10)
-    if names[0][:15] == names[1][:15]:
-        assert names[1] == names[0] + "_2"
+        result = s.wait(10)
+        assert result.csv_path.parent == s.run_dir and result.png_path.parent == s.run_dir
+        assert s.run_dir.name[:13] == s.base_name[:13]
+    assert all(d.parent == tmp_path for d in dirs)
+    assert dirs[0].name.endswith("_SDL")
+    if dirs[0].name[:13] == dirs[1].name[:13]:
+        assert dirs[1].name == dirs[0].name + "_2"
 
 
 def test_stop_keep_then_save(fake, tmp_path):
@@ -309,10 +315,10 @@ def test_save_again_after_auto_save(fake, tmp_path):
     assert s.can_save
     s.note = "2回目"
     result = s.save()
-    second = tmp_path / f"{s.base_name}_2.csv"
-    assert result.save_ok and result.csv_path == second and result.png_path == tmp_path / f"{s.base_name}_2.png"
+    second = s.run_dir / f"{s.base_name}_2.csv"
+    assert result.save_ok and result.csv_path == second and result.png_path == s.run_dir / f"{s.base_name}_2.png"
     result = s.save()
-    assert result.csv_path == tmp_path / f"{s.base_name}_3.csv"
+    assert result.csv_path == s.run_dir / f"{s.base_name}_3.csv"
     data = [p.read_text(encoding="utf-8-sig").split("\n\n", 1)[1] for p in (first, second, result.csv_path)]
     assert data[0] == data[1] == data[2]
     assert '備考,"1回目"' in first.read_text(encoding="utf-8-sig")

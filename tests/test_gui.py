@@ -1,6 +1,7 @@
 """画面の自動テスト（AC-01, 05, 09, 10 と DESIGN.md D-AC-03 の自動化できる部分）。ディスプレイが無ければスキップ"""
 
 import time
+from pathlib import Path
 
 import pytest
 
@@ -104,10 +105,10 @@ def test_disconnected_state(make_app):
     assert not app.onoff_btn.lit
     assert str(app.onoff_btn.frame["bg"]) == "#c9cdd1"
     assert str(app.graph_btn.button["bg"]) == "#e9ebed"  # 押せないときは灰色
-    assert app.plan_label["text"] == "保存予定: 開始時に決定（YYYYMMDD_HHMM.csv）"
+    assert app.plan_label["text"] == f"保存予定: {Path('YYYYMMDD_HHMM_SDL') / 'YYYYMMDD_HHMM.csv'}"
     app.radios[1].invoke()
     app.radios[4].invoke()
-    assert app.plan_label["text"] == "保存予定: 開始時に決定（YYYYMMDD_HHMM_4v1_pana.csv）"
+    assert app.plan_label["text"] == f"保存予定: {Path('YYYYMMDD_HHMM_SDL') / 'YYYYMMDD_HHMM_4v1_pana.csv'}"
     assert [c["text"] for c in app.chip_values] == ["1.000 A", "3.000 V", "1.0 s", "4.1 V", "Panasonic"]
 
 
@@ -175,7 +176,9 @@ def test_discharge_auto_stop_saves(make_app, fake, dialogs, tmp_path):
     app.note_text.insert("1.0", "最初")
     start(app)
     assert app.load_label["text"] == "LOAD ON" and app.state_label["text"] == "● 放電中"
-    assert app.plan_label["text"] == f"保存予定: {app.session.base_name}.csv"
+    run_dir = app.session.run_dir  # 保存先の中の出力フォルダ <YYYYMMDD_HHMM>_SDL
+    assert run_dir.parent == tmp_path and run_dir.name.endswith("_SDL") and run_dir.name[:13] == app.session.base_name[:13]
+    assert app.plan_label["text"] == f"保存予定: {Path(run_dir.name) / (app.session.base_name + '.csv')}"
     assert app.message_var.get().endswith("放電開始（1.000 A / 終止 3.000 V）")
     assert str(app.model_entry["state"]) == "disabled"
     assert all(str(rb["state"]) == "disabled" for rb in app.radios)
@@ -196,12 +199,12 @@ def test_discharge_auto_stop_saves(make_app, fake, dialogs, tmp_path):
     assert pump(app.root, lambda: app.state == "done")
     assert "showinfo" in dialogs.names()
     base = app.session.base_name
-    csv_path = tmp_path / f"{base}.csv"
+    csv_path = app.session.run_dir / f"{base}.csv"
     assert base.endswith("_maxell")
-    assert csv_path.exists() and (tmp_path / f"{base}.png").exists()
+    assert csv_path.exists() and (app.session.run_dir / f"{base}.png").exists()
     assert app.message_var.get().endswith(f"終止電圧に到達しました。保存しました: {csv_path}")
     assert app.state_label["text"] == "完了: 終止電圧到達" and app.load_label["text"] == "LOAD OFF"
-    assert app.plan_label["text"] == f"保存済み: {base}.csv"
+    assert app.plan_label["text"] == f"保存済み: {Path(app.session.run_dir.name) / (base + '.csv')}"
     # 自動保存のあとも CSV保存を押せる（もう一度保存すると <ベース名>_2.csv）
     assert enabled(app) == {"onoff_btn": True, "csv_btn": True, "graph_btn": True, "connect_btn": True}
     assert str(app.graph_btn.button["bg"]) == "#b7282e"  # グラフ保存は押せるとき茜色
@@ -271,27 +274,27 @@ def test_onoff_stop_then_csv_save(make_app, fake, dialogs, tmp_path):
     base = app.session.base_name
     assert app.plan_label["text"] == "未保存（［CSV保存］で保存）"
     assert enabled(app)["csv_btn"]
-    assert not (tmp_path / f"{base}.csv").exists() and (tmp_path / f"{base}_partial.csv").exists()
+    assert not (app.session.run_dir / f"{base}.csv").exists() and (app.session.run_dir / f"{base}_partial.csv").exists()
     app.note_text.insert("end", "→保存時点")
     app.csv_btn.invoke()
     assert pump(app.root, lambda: not app.pending and not app._saving)
-    csv_path = tmp_path / f"{base}.csv"
-    assert csv_path.exists() and (tmp_path / f"{base}.png").exists()
-    assert not (tmp_path / f"{base}_partial.csv").exists()
+    csv_path = app.session.run_dir / f"{base}.csv"
+    assert csv_path.exists() and (app.session.run_dir / f"{base}.png").exists()
+    assert not (app.session.run_dir / f"{base}_partial.csv").exists()
     assert '備考,"メモ→保存時点"' in csv_path.read_text(encoding="utf-8-sig")
     assert app.message_var.get().endswith(f"保存しました: {csv_path}")
-    assert app.plan_label["text"] == f"保存済み: {base}.csv"
+    assert app.plan_label["text"] == f"保存済み: {Path(app.session.run_dir.name) / (base + '.csv')}"
     # 保存したあとも何度でも保存できる。上書きせずに _2, _3 … を付ける（備考は押した時点の内容）
     assert enabled(app)["csv_btn"]
     app.note_text.insert("end", "→2回目")
     app.csv_btn.invoke()
-    assert pump(app.root, lambda: not app._saving and (tmp_path / f"{base}_2.csv").exists())
-    second = tmp_path / f"{base}_2.csv"
-    assert (tmp_path / f"{base}_2.png").exists()
+    assert pump(app.root, lambda: not app._saving and (app.session.run_dir / f"{base}_2.csv").exists())
+    second = app.session.run_dir / f"{base}_2.csv"
+    assert (app.session.run_dir / f"{base}_2.png").exists()
     assert '備考,"メモ→保存時点→2回目"' in second.read_text(encoding="utf-8-sig")
     assert '備考,"メモ→保存時点"' in csv_path.read_text(encoding="utf-8-sig")  # 1 回目のファイルはそのまま
     assert app.message_var.get().endswith(f"保存しました: {second}")
-    assert app.plan_label["text"] == f"保存済み: {base}_2.csv"
+    assert app.plan_label["text"] == f"保存済み: {Path(app.session.run_dir.name) / (base + '_2.csv')}"
     assert enabled(app)["csv_btn"]
 
 
@@ -331,7 +334,7 @@ def test_unsaved_data_on_close(make_app, fake, dialogs, tmp_path):
     app.on_close()
     assert dialogs.calls[-1] == ("askyesnocancel", "保存していないデータがあります。保存して終了しますか？")
     assert closed
-    assert (tmp_path / f"{base}.csv").exists()
+    assert (app.session.run_dir / f"{base}.csv").exists()
 
 
 def test_save_graph_names(make_app, fake, tmp_path):
@@ -348,7 +351,7 @@ def test_save_graph_names(make_app, fake, tmp_path):
     assert app.graph_btn.button["state"] == "normal"  # OFF にしたら押せる
     app.graph_btn.invoke()
     base = app.session.base_name
-    named = list(tmp_path.glob(f"{base}_*.png"))
+    named = list(app.session.run_dir.glob(f"{base}_*.png"))  # 放電の出力フォルダに保存
     assert len(named) == 1 and len(named[0].stem) == len(base) + 7
     assert app.message_var.get().endswith(f"グラフを保存しました: {named[0]}")
 
@@ -416,7 +419,7 @@ def test_close_during_discharge_saves(make_app, fake, tmp_path, monkeypatch):
     closed = []
     app.root.bind("<Destroy>", lambda e: closed.append(1) if e.widget is app.root else None)
     pump(app.root, lambda: bool(closed), timeout=10)
-    assert (tmp_path / f"{base}.csv").exists()
+    assert (app.session.run_dir / f"{base}.csv").exists()
     assert not fake.load_on
 
 
