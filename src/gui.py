@@ -164,7 +164,7 @@ class FlatButton:
 
 
 class LoadKey:
-    """SDL1020X-E 本体の ON/OFF キーを模したボタン（明るい灰色の縁の中の黒いキー）。負荷 ON の間は外枠だけ黄緑に光る"""
+    """SDL1020X-E 本体の ON/OFF キーを模したボタン（明るい灰色の縁の中の黒いキー）。負荷 ON の間は外枠と文字が黄緑に光る"""
 
     def __init__(self, parent, fonts: Fonts, command, *, width: int = 132, height: int = 44):
         self.frame = tk.Frame(parent, width=px(width), height=px(height), bg=C["onoff-frame"])
@@ -183,8 +183,11 @@ class LoadKey:
 
     def _apply(self) -> None:
         bg = C["onoff-key"]
-        fg = C["onoff-text"] if self._enabled else C["onoff-off-text"]
-        frame = C["onoff-lit"] if self._lit else C["onoff-frame"]
+        if self._lit:
+            fg = frame = C["onoff-lit"]
+        else:
+            fg = C["onoff-text"] if self._enabled else C["onoff-off-text"]
+            frame = C["onoff-frame"]
         self.button.configure(state="normal" if self._enabled else "disabled", bg=bg, fg=fg, activebackground=bg,
                               activeforeground=fg, disabledforeground=fg, cursor="hand2" if self._enabled else "arrow")
         self.frame.configure(bg=frame)

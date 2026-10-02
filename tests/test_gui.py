@@ -181,8 +181,12 @@ def test_discharge_auto_stop_saves(make_app, fake, dialogs, tmp_path):
     assert all(str(rb["state"]) == "disabled" for rb in app.radios)
     assert str(app.note_text["state"]) == "normal"
     assert enabled(app) == {"onoff_btn": True, "csv_btn": False, "graph_btn": True, "connect_btn": False}
-    assert app.onoff_btn.lit  # 放電中は ON/OFF キーの外枠だけ黄緑に光る（キーは黒のまま）
-    assert str(app.onoff_btn.frame["bg"]) == "#9be03c"
+    assert app.onoff_btn.lit  # 放電中は ON/OFF キーの外枠と文字が黄緑に光る（キーは黒のまま）
+    import theme
+
+    lit = theme.COLORS["onoff-lit"]
+    assert str(app.onoff_btn.frame["bg"]) == lit
+    assert str(app.onoff_btn.button["fg"]) == lit
     assert str(app.onoff_btn.button["bg"]) == "#17191b"
     assert str(app.graph_btn.button["bg"]) == "#b7282e"  # グラフ保存は押せるとき茜色
     app.note_text.insert("end", "→変更")
