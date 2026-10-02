@@ -1,7 +1,7 @@
 @echo off
 rem Build SDL discharge logger (Windows 11 / Python 3.12)
 rem Usage: double-click build.bat, or run it from a command prompt.
-rem Output: dist\ (a single exe; the Japanese file name is set by build_exe.py)
+rem Output: dist\SDL_Monitor.exe (a single exe)
 rem This file is ASCII only on purpose (non-ASCII text breaks cmd parsing).
 setlocal
 cd /d "%~dp0" || goto :error

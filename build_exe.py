@@ -1,20 +1,17 @@
-"""PyInstaller で単一 exe（dist/SDL放電ロガー.exe）を作る（build.bat から呼ぶ）
+"""PyInstaller で単一 exe（dist/SDL_Monitor.exe）を作る（build.bat から呼ぶ）
 
-PyInstaller には ASCII 名（SDLDischargeLogger）でビルドさせ、最後に日本語名へ変更する
-（作業フォルダ名などに日本語を通さないため。1 ファイル形式の exe は名前を変えても動く）。
+exe のファイル名は EXE_NAME。画面のタイトル（SDL放電ロガー）とは別に決めている。
 """
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
 import PyInstaller.__main__
 
 ROOT = Path(__file__).resolve().parent
-ASCII_NAME = "SDLDischargeLogger"
-EXE_NAME = "SDL放電ロガー"
+EXE_NAME = "SDL_Monitor"
 EXCLUDES = ["PyQt5", "PyQt6", "PySide2", "PySide6", "wx", "gi", "IPython", "jupyter", "notebook",
             "pytest", "scipy", "pandas", "sphinx"]
 
@@ -25,7 +22,7 @@ def main() -> int:
     args = [
         str(ROOT / "src" / "main.py"),
         "--onefile", "--windowed", "--noconfirm", "--clean",
-        "--name", ASCII_NAME,
+        "--name", EXE_NAME,
         "--paths", str(ROOT / "src"),
         "--distpath", str(dist),
         "--workpath", str(ROOT / "build"),
@@ -35,11 +32,7 @@ def main() -> int:
         args += ["--exclude-module", mod]
     PyInstaller.__main__.run(args)
 
-    built = dist / f"{ASCII_NAME}{ext}"
     target = dist / f"{EXE_NAME}{ext}"
-    if target.exists():
-        target.unlink()
-    os.replace(built, target)
     print(f"作成しました: {target}（{target.stat().st_size / 1024 / 1024:.1f} MB）")
     return 0
 
