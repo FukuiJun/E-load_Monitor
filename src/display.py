@@ -60,7 +60,7 @@ def planned_name_pattern(full_voltage: str | None, maker: str | None) -> str:
     """待機中の「保存予定」に出すファイル名のパターン"""
     parts = ["YYYYMMDD_HHMM"]
     if full_voltage:
-        parts.append(full_voltage)
+        parts.append(recorder.full_voltage_tag(full_voltage))
     if maker:
         parts.append(recorder.MAKER_ABBR[maker])
     return "_".join(parts) + ".csv"

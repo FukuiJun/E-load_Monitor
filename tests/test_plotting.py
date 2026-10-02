@@ -85,8 +85,8 @@ def test_graph_update_86400_points_within_half_second():
 
 def test_png_title_lines_omit_missing():
     """10.2：2 行目は未入力の項目を省く。3 行目は完了後のみ"""
-    assert plotting.png_title_lines("20261001_143005_4.1V_pana", "NCR18650B", 1.0, 3.0) == [
-        "20261001_143005_4.1V_pana", "型番: NCR18650B / 放電電流: 1.000 A / 終止電圧: 3.000 V"]
+    assert plotting.png_title_lines("20261001_1430_4v1_pana", "NCR18650B", 1.0, 3.0) == [
+        "20261001_1430_4v1_pana", "型番: NCR18650B / 放電電流: 1.000 A / 終止電圧: 3.000 V"]
     assert plotting.png_title_lines("b", "", 1.0, 3.0)[1] == "放電電流: 1.000 A / 終止電圧: 3.000 V"
     lines = plotting.png_title_lines("b", "X", 1.0, 3.0, 2702.5, 9.874, "終止電圧到達")
     assert lines[2] == "放電容量: 2702.5 mAh / 電力量: 9.874 Wh / 終了理由: 終止電圧到達"
@@ -95,7 +95,7 @@ def test_png_title_lines_omit_missing():
 def test_render_png_size(tmp_path):
     """5.2：PNG は 1600×1000 px（白背景）"""
     path = tmp_path / "g.png"
-    lines = plotting.png_title_lines("20261001_143005_4.1V_pana", "NCR18650B", 1.0, 3.0)
+    lines = plotting.png_title_lines("20261001_1430_4v1_pana", "NCR18650B", 1.0, 3.0)
     plotting.render_png(path, [0, 60, 120], [4.1, 4.0, 3.9], [1, 1, 1], 3.0, 1.0, lines)
     head = path.read_bytes()[:24]
     assert head[:8] == b"\x89PNG\r\n\x1a\n"

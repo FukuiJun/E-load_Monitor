@@ -42,7 +42,7 @@ def test_chip_values_and_dash():
 
 
 def test_planned_name_pattern():
-    assert display.planned_name_pattern("4.1V", "Panasonic") == "YYYYMMDD_HHMM_4.1V_pana.csv"
+    assert display.planned_name_pattern("4.1V", "Panasonic") == "YYYYMMDD_HHMM_4v1_pana.csv"
     assert display.planned_name_pattern(None, "マクセル") == "YYYYMMDD_HHMM_maxell.csv"
     assert display.planned_name_pattern(None, None) == "YYYYMMDD_HHMM.csv"
 

@@ -2,6 +2,7 @@
 
 import csv
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -12,24 +13,24 @@ START = datetime(2026, 10, 1, 14, 30, 5)
 
 
 @pytest.mark.parametrize("full, maker, expected", [
-    ("4.1V", "Panasonic", "20261001_1430_4.1V_pana"),
-    ("4.2V", "マクセル", "20261001_1430_4.2V_maxell"),
+    ("4.1V", "Panasonic", "20261001_1430_4v1_pana"),
+    ("4.2V", "マクセル", "20261001_1430_4v2_maxell"),
     (None, "Panasonic", "20261001_1430_pana"),
-    ("4.1V", None, "20261001_1430_4.1V"),
+    ("4.1V", None, "20261001_1430_4v1"),
     (None, None, "20261001_1430"),
 ])
 def test_base_name_patterns(full, maker, expected):
-    """AC-02：仕様書 5.2 の表の 5 パターン（日時は分まで）"""
+    """AC-02：仕様書 5.2 の表の 5 パターン（日時は分まで。満充電電圧は 4v1 のようにドット・大文字なし）"""
     assert recorder.make_base_name(START, full, maker) == expected
 
 
 def test_unique_base_name_adds_suffix(tmp_path):
     """AC-02：同名ファイルがあると _2、さらにあると _3"""
-    base = "20261001_1430_4.1V_pana"
+    base = "20261001_1430_4v1_pana"
     assert recorder.unique_base_name(tmp_path, base) == base
     (tmp_path / f"{base}.csv").write_text("x")
     assert recorder.unique_base_name(tmp_path, base) == f"{base}_2"
-    (tmp_path / f"{base}_2.partial.csv").write_text("x")
+    (tmp_path / f"{base}_2_partial.csv").write_text("x")
     assert recorder.unique_base_name(tmp_path, base) == f"{base}_3"
     (tmp_path / f"{base}_3.png").write_text("x")
     assert recorder.unique_base_name(tmp_path, base) == f"{base}_4"
@@ -68,7 +69,7 @@ def _info(**kw):
 
 
 def _write(tmp_path, info, n=3):
-    partial = tmp_path / "x.partial.csv"
+    partial = tmp_path / "x_partial.csv"
     w = PartialWriter(partial)
     integ = Integrator()
     for k in range(n):
@@ -136,7 +137,7 @@ def test_final_csv_does_not_overwrite(tmp_path):
 
 def test_partial_writer_flushes_each_row(tmp_path):
     """8 章：1 行ごとに flush され、閉じる前でも読める"""
-    p = tmp_path / "a.partial.csv"
+    p = tmp_path / "a_partial.csv"
     w = PartialWriter(p)
     w.append(Sample(START, 0.0, 4.1, 1.0, 4.1, 0.0, 0.0))
     assert p.read_bytes().count(b"\r\n") == 2
@@ -156,6 +157,16 @@ def test_check_writable(tmp_path):
 
 
 def test_find_partial_files(tmp_path):
-    (tmp_path / "a.partial.csv").write_text("x")
-    (tmp_path / "b.csv").write_text("x")
-    assert recorder.find_partial_files(tmp_path) == [tmp_path / "a.partial.csv"]
+    """一時ファイルは <ベース名>_partial.csv。v1.0.5 までの <ベース名>.partial.csv も見つける"""
+    (tmp_path / "a_partial.csv").write_text("x")
+    (tmp_path / "b.partial.csv").write_text("x")
+    (tmp_path / "c.csv").write_text("x")
+    assert recorder.find_partial_files(tmp_path) == [tmp_path / "a_partial.csv", tmp_path / "b.partial.csv"]
+
+
+def test_full_voltage_tag():
+    assert recorder.full_voltage_tag("4.1V") == "4v1"
+    assert recorder.full_voltage_tag("4.2V") == "4v2"
+    for name in (recorder.output_paths(Path("."), recorder.make_base_name(START, "4.2V", "マクセル")).values()):
+        stem = name.name[:-len(".csv")]
+        assert "." not in stem and stem == stem.lower()

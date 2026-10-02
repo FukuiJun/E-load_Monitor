@@ -18,7 +18,9 @@ FULL_VOLTAGES = ["4.1V", "4.2V"]
 CSV_ENCODING = "utf-8-sig"  # UTF-8 BOM 付き（Excel で文字化けしない）
 CSV_NEWLINE = "\r\n"
 COLUMNS = ["日時", "経過時間[s]", "電圧[V]", "電流[A]", "電力[W]", "放電容量[mAh]", "電力量[Wh]"]
-PARTIAL_SUFFIX = ".partial.csv"
+# ファイル名にはドットや大文字を使わない（拡張子の . を除く）
+PARTIAL_SUFFIX = "_partial.csv"
+LEGACY_PARTIAL_SUFFIX = ".partial.csv"  # v1.0.5 までの一時ファイル（起動時の検出だけに使う）
 # 放電開始前に確保されている必要がある空き容量（24 時間分の CSV が約 7MB）
 MIN_FREE_BYTES = 20 * 1024 * 1024
 
@@ -31,13 +33,18 @@ END_REASON_ERROR = "異常終了"
 
 # ---- ファイル名 ----
 def make_base_name(start: datetime, full_voltage: str | None = None, maker: str | None = None) -> str:
-    """<YYYYMMDD_HHMM>[_<満充電電圧>][_<メーカー略称>]（未選択の部分は _ ごと省く。同じ分に重なれば _2 …）"""
+    """<YYYYMMDD_HHMM>[_<満充電電圧 4v1 など>][_<メーカー略称>]（未選択の部分は _ ごと省く。同じ分に重なれば _2 …）"""
     parts = [start.strftime("%Y%m%d_%H%M")]
     if full_voltage:
-        parts.append(full_voltage)
+        parts.append(full_voltage_tag(full_voltage))
     if maker:
         parts.append(MAKER_ABBR[maker])
     return "_".join(parts)
+
+
+def full_voltage_tag(full_voltage: str) -> str:
+    """ファイル名に入れる満充電電圧。"4.1V" → "4v1"（ドット・大文字を使わない）"""
+    return full_voltage.strip().rstrip("Vv").replace(".", "v").lower()
 
 
 def output_paths(folder: Path, base: str) -> dict[str, Path]:
@@ -56,7 +63,8 @@ def unique_base_name(folder: Path, base: str) -> str:
 
 def find_partial_files(folder: Path) -> list[Path]:
     try:
-        return sorted(Path(folder).glob(f"*{PARTIAL_SUFFIX}"))
+        found = set(Path(folder).glob(f"*{PARTIAL_SUFFIX}")) | set(Path(folder).glob(f"*{LEGACY_PARTIAL_SUFFIX}"))
+        return sorted(found)
     except OSError:
         return []
 
@@ -143,7 +151,7 @@ def _csv_line(values: list[str]) -> str:
 
 
 class PartialWriter:
-    """一時ファイル（<ベース名>.partial.csv）に測定行を 1 行ずつ追記する（毎行 flush）"""
+    """一時ファイル（<ベース名>_partial.csv）に測定行を 1 行ずつ追記する（毎行 flush）"""
 
     def __init__(self, path: Path):
         self.path = Path(path)

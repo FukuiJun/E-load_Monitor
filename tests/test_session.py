@@ -38,7 +38,7 @@ def test_start_sets_cc_and_load_on(fake, tmp_path):
         assert ":SOUR:CURR:LEV:IMM 1.000" in fake.commands
         assert fake.load_on
         assert s.paths["partial"].exists()
-        assert s.base_name.endswith("_4.1V_pana")
+        assert s.base_name.endswith("_4v1_pana")
     finally:
         s.request_stop(save=False)
         s.wait(5)

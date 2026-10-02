@@ -107,7 +107,7 @@ def test_disconnected_state(make_app):
     assert app.plan_label["text"] == "保存予定: 開始時に決定（YYYYMMDD_HHMM.csv）"
     app.radios[1].invoke()
     app.radios[4].invoke()
-    assert app.plan_label["text"] == "保存予定: 開始時に決定（YYYYMMDD_HHMM_4.1V_pana.csv）"
+    assert app.plan_label["text"] == "保存予定: 開始時に決定（YYYYMMDD_HHMM_4v1_pana.csv）"
     assert [c["text"] for c in app.chip_values] == ["1.000 A", "3.000 V", "1.0 s", "4.1 V", "Panasonic"]
 
 
@@ -271,13 +271,13 @@ def test_onoff_stop_then_csv_save(make_app, fake, dialogs, tmp_path):
     base = app.session.base_name
     assert app.plan_label["text"] == "未保存（［CSV保存］で保存）"
     assert enabled(app)["csv_btn"]
-    assert not (tmp_path / f"{base}.csv").exists() and (tmp_path / f"{base}.partial.csv").exists()
+    assert not (tmp_path / f"{base}.csv").exists() and (tmp_path / f"{base}_partial.csv").exists()
     app.note_text.insert("end", "→保存時点")
     app.csv_btn.invoke()
     assert pump(app.root, lambda: not app.pending and not app._saving)
     csv_path = tmp_path / f"{base}.csv"
     assert csv_path.exists() and (tmp_path / f"{base}.png").exists()
-    assert not (tmp_path / f"{base}.partial.csv").exists()
+    assert not (tmp_path / f"{base}_partial.csv").exists()
     assert '備考,"メモ→保存時点"' in csv_path.read_text(encoding="utf-8-sig")
     assert app.message_var.get().endswith(f"保存しました: {csv_path}")
     assert app.plan_label["text"] == f"保存済み: {base}.csv"
@@ -436,13 +436,13 @@ def test_close_during_discharge_discards(make_app, fake, tmp_path, monkeypatch):
 
 
 def test_partial_file_notice_at_startup(dialogs, tmp_path, app_dir):
-    """9 章：起動時に保存先の *.partial.csv を検出したら知らせる（自動処理はしない）"""
+    """9 章：起動時に保存先の *_partial.csv を検出したら知らせる（自動処理はしない）"""
     import json
 
     import gui
 
     (app_dir / "sdl_logger_settings.json").write_text(json.dumps({"folder": str(tmp_path)}), encoding="utf-8")
-    p = tmp_path / "20261001_143005_4.1V_pana.partial.csv"
+    p = tmp_path / "20261001_1430_4v1_pana_partial.csv"
     p.write_text("x")
     root = tk.Tk()
     try:
